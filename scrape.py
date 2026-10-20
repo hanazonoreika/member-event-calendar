@@ -567,7 +567,11 @@ def collect_note_lines(detail):
 BODY_SKIP_WORDS = (
     "ログイン", "会員登録", "プライバシー", "利用規約",
     "お問い合わせ", "サイトマップ", "Copyright", "COPYRIGHT",
-    "HOME", "NEWS", "SCHEDULE",
+    "HOME", "NEWS", "SCHEDULE","OFFICIAL SITE","PROFILE",
+    "DISCOGRAPHY","PROJECT","BLOG","GOODS","REQUEST",
+    "F.ENT Premium Store","BMK WEB SITE","ボイメンエリア研究生",
+    "FAN CLUB","LOGIN","JOIN","INFORMATION","LIVE","OFFMOVIE",
+    "PHOTO","WALLPAPER","STORE","MOBILE","RADIO"
 )
 
 
