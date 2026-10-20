@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#263b56">
-<title>ボイメン5人・でらボ 統合イベントカレンダー</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>【非公式】 統合イベントカレンダー</title>
 <style>
 :root{--bg:#f6f4f1;--card:#fff;--ink:#262626;--muted:#777;--line:#e8e4df;--navy:#263b56;--ticket:#e58b32}
 *{box-sizing:border-box}
@@ -57,7 +58,6 @@ a{color:#245f9e;overflow-wrap:anywhere}
 .map-link{font-weight:600}
 .calendar-wrap{min-width:0}
 .period-section{margin-top:10px}
-/* Ticket bars are rendered directly beneath the corresponding calendar week. */
 .week-ticket-lane{min-width:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:minmax(23px,auto);gap:3px 4px;margin-top:3px}
 .week-ticket-lane:empty{display:none}
 .period-heading{font-size:.76rem;color:#8a5b27;margin:5px 0}
@@ -83,8 +83,8 @@ a{color:#245f9e;overflow-wrap:anywhere}
 </head>
 <body>
 <header>
-<h1>ボイメン5人・でらボ 統合イベントカレンダー</h1>
-<p>でらボ × BOYS AND MEN｜公式予定・会場マップ・チケット受付期間</p>
+<h1>【非公式】 統合イベントカレンダー</h1>
+<p>　公式予定・会場マップ・チケット受付期間</p>
 </header>
 
 <main>
@@ -109,7 +109,7 @@ a{color:#245f9e;overflow-wrap:anywhere}
 </div>
 
 <div class="legend" id="legend"></div>
-<p class="small">日付を選ぶと、その日のイベントが表示されます。オレンジ色のバーは受付開始日から終了日までを示します。</p>
+<p class="small">日付を選ぶと、その日のイベントと、その日が受付期間に含まれるチケットが表示されます。オレンジ色のバーは受付開始日から終了日までを示します。</p>
 </section>
 
 <aside class="panel">
@@ -218,17 +218,29 @@ const $=id=>document.getElementById(id);
 function key(d){
  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 }
+function cleanList(data){
+ return Array.isArray(data)
+  ? data.filter(x=>x&&typeof x==="object"&&typeof x.id==="string")
+  : [];
+}
 function readManual(){
- try{return JSON.parse(localStorage.getItem(KEY)||"[]");}
+ try{return cleanList(JSON.parse(localStorage.getItem(KEY)||"[]"));}
  catch{return [];}
 }
 function saveManual(){
- localStorage.setItem(KEY,JSON.stringify(manual));
+ try{localStorage.setItem(KEY,JSON.stringify(manual));}
+ catch{alert("ブラウザに保存できませんでした。バックアップを取ってください。");}
 }
 function esc(s){
  return String(s??"").replace(/[&<>"']/g,c=>({
   "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
  }[c]));
+}
+function safeUrl(u){
+ try{
+  const p=new URL(u,location.href);
+  return (p.protocol==="https:"||p.protocol==="http:")?p.href:"";
+ }catch{return "";}
 }
 function all(){
  const hidden=new Set(manual.filter(x=>x.hidden).map(x=>x.id));
@@ -244,8 +256,8 @@ function isPeriod(e){
 function periodStart(e){return e.start_date||e.date;}
 function periodEnd(e){return e.end_date||e.date;}
 function filtered(e){
- return (!$("memberFilter").value||e.member===$("memberFilter").value)
- &&(!$("typeFilter").value||e.type===$("typeFilter").value);
+ const m=$("memberFilter").value, t=$("typeFilter").value;
+ return (!m||e.member===m||isPeriod(e))&&(!t||e.type===t);
 }
 function mapUrl(place){
  return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(place);
@@ -341,19 +353,31 @@ function render(){
  renderDay();
 }
 
-function showPeriodDetail(e){
- $("dayTitle").textContent="チケット受付期間";
- $("dayEvents").innerHTML=`
+function periodCard(e){
+ return `
   <article class="event">
    <h3>${esc(e.title)}</h3>
    <div class="meta">受付期間：${esc(dateLabel(periodStart(e)))} ～ ${esc(dateLabel(periodEnd(e)))}</div>
    ${e.notes?`<p class="muted">${esc(e.notes).replace(/\n/g,"<br>")}</p>`:""}
-   ${e.url?`<p><a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">公式・出典ページ ↗</a></p>`:""}
+   ${safeUrl(e.url)?`<p><a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">公式・出典ページ ↗</a></p>`:""}
    ${e.place?`<p class="meta">📍 ${mapLink(e.place)}</p>`:""}
    <div class="actions"><button type="button" data-edit="${esc(e.id)}">編集</button></div>
   </article>`;
- const editButton=$("dayEvents").querySelector("[data-edit]");
- if(editButton)editButton.onclick=()=>edit(e);
+}
+
+function bindEditButtons(){
+ document.querySelectorAll("[data-edit]").forEach(button=>{
+  button.onclick=()=>{
+   const e=all().find(x=>x.id===button.dataset.edit);
+   if(e)edit(e);
+  };
+ });
+}
+
+function showPeriodDetail(e){
+ $("dayTitle").textContent="チケット受付期間";
+ $("dayEvents").innerHTML=periodCard(e);
+ bindEditButtons();
 }
 
 function renderDay(){
@@ -368,21 +392,23 @@ function renderDay(){
   <article class="event">
    <h3><i class="dot" style="background:${eventColor(e)}"></i> ${esc(e.title)}</h3>
    <div class="meta">${esc(e.time||"時刻未定")} · ${esc(e.member||"")} · ${esc(e.type||"イベント")}</div>
-   ${e.place?`<div class="meta">📍 ${mapLink(e.place)}</div>`:""}
-   ${isPeriod(e)?`<div class="meta">受付：${esc(periodStart(e))} ～ ${esc(periodEnd(e))}</div>`:""}
+   ${e.place?`<div class="meta">📍 ${mapLink(e.place)}</div>`:`<div class="meta">📍 会場未取得 · <a href="${mapUrl(e.title)}" target="_blank" rel="noopener noreferrer">タイトルで地図検索 ↗</a></div>`}
    <span class="chip">${e.origin==="official"?"公式取得":e.source==="dera"?"でらボ公式":e.source==="boys"?"BOYS AND MEN公式":"手動登録"}</span>
    ${e.unconfirmed?'<span class="chip">未確認</span>':""}
    ${e.notes?`<p class="muted">${esc(e.notes).replace(/\n/g,"<br>")}</p>`:""}
-   ${e.url?`<p><a href="${esc(e.url)}" target="_blank" rel="noopener noreferrer">公式・出典ページ ↗</a></p>`:""}
+   ${safeUrl(e.url)?`<p><a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">公式・出典ページ ↗</a></p>`:""}
    <div class="actions"><button type="button" data-edit="${esc(e.id)}">編集</button><button class="danger" type="button" data-del="${esc(e.id)}">削除</button></div>
   </article>`).join(""):'<p class="muted">この日の予定はまだありません。公式データを再読込するか、手動で追加してね。</p>';
 
- document.querySelectorAll("[data-edit]").forEach(button=>{
-  button.onclick=()=>{
-   const e=all().find(x=>x.id===button.dataset.edit);
-   if(e)edit(e);
-  };
- });
+ // この日が受付期間に含まれるチケットも表示
+ const periods=all().filter(e=>isPeriod(e)&&filtered(e)&&periodStart(e)<=selected&&selected<=periodEnd(e));
+ if(periods.length){
+  $("dayEvents").insertAdjacentHTML("beforeend",
+   `<div class="period-heading">この日が受付期間のチケット（${periods.length}件）</div>`+
+   periods.map(periodCard).join(""));
+ }
+
+ bindEditButtons();
  document.querySelectorAll("[data-del]").forEach(button=>{
   button.onclick=()=>{
    const e=all().find(x=>x.id===button.dataset.del);
@@ -553,7 +579,7 @@ $("file").onchange=async event=>{
   const data=JSON.parse(await file.text());
   if(!Array.isArray(data))throw Error("配列ではありません");
   if(confirm("手動予定をバックアップの内容で置き換える？")){
-   manual=data;
+   manual=cleanList(data);
    saveManual();
    render();
   }
