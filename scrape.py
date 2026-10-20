@@ -40,8 +40,8 @@ DERA_API_BASE = "https://user-api.bitfan.id"
 
 MEMBERS = ["辻本達規", "田村侑久", "本田剛文", "平松賢人", "吉原雅斗"]
 
-# ★ 自分の連絡先(メールアドレスやGitHubのURLなど)に書き換えてください
-CONTACT = "your-contact@example.com"
+
+CONTACT = "X:@0hnawaba_"
 
 HEADERS = {
     "User-Agent": f"BoysAndMenCalendarBot/1.0 (personal use; contact: {CONTACT})",
