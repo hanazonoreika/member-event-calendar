@@ -15,11 +15,12 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -29,82 +30,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Fetch official schedules
         run: python scrape.py
-
-      - name: Diagnose official calendar API
-        run: |
-          python - <<'PY'
-          import re
-          import requests
-          from bs4 import BeautifulSoup
-          from urllib.parse import urljoin
-
-          page = "https://dxboys.bitfan.id/schedules/menu/184780"
-          headers = {"User-Agent": "Mozilla/5.0"}
-
-          response = requests.get(
-              page,
-              headers=headers,
-              timeout=30,
-          )
-          print("PAGE_STATUS:", response.status_code)
-
-          soup = BeautifulSoup(response.text, "html.parser")
-          token_tag = soup.select_one('meta[name="jwt-token"]')
-          token = token_tag.get("content", "") if token_tag else ""
-
-          calendar = soup.select_one("#js-schedule-calender")
-          subdomain = calendar.get("data-subdomain", "") if calendar else ""
-
-          print("SUBDOMAIN:", subdomain)
-          print("TOKEN_PRESENT:", bool(token))
-
-          scripts = [
-              urljoin(page, item.get("src", ""))
-              for item in soup.select("script[src]")
-              if "schedule_calender-" in item.get("src", "")
-          ]
-
-          main_script = next(
-              (
-                  url for url in scripts
-                  if "runtime~app" not in url
-              ),
-              None,
-          )
-
-          if not main_script:
-              print("MAIN_SCRIPT_NOT_FOUND")
-              raise SystemExit(0)
-
-          js_response = requests.get(
-              main_script,
-              headers=headers,
-              timeout=30,
-          )
-          print("SCRIPT_STATUS:", js_response.status_code)
-
-          js = js_response.text
-
-          for marker in [
-              "27:function",
-              'function r(){return',
-              'function o(){return',
-              "dashboard-api.bitfan",
-              'l.a.get("/fanclubs/',
-          ]:
-              pos = js.find(marker)
-              print("\nMARKER:", marker, "POSITION:", pos)
-              if pos >= 0:
-                  print(js[max(0, pos - 300):pos + 1800])
-
-          print("\nDIAGNOSTIC_FINISHED")
-          PY
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -117,6 +49,7 @@ jobs:
   deploy:
     needs: update
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     environment:
       name: github-pages
