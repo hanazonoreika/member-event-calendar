@@ -40,7 +40,8 @@ DERA_API_BASE = "https://user-api.bitfan.id"
 
 MEMBERS = ["辻本達規", "田村侑久", "本田剛文", "平松賢人", "吉原雅斗"]
 
-CONTACT = "X:@0hnawaba_"
+# ★ 自分の連絡先(メールアドレスやGitHubのURLなど)に書き換えてください
+CONTACT = "your-contact@example.com"
 
 HEADERS = {
     "User-Agent": f"BoysAndMenCalendarBot/1.0 (personal use; contact: {CONTACT})",
@@ -974,3 +975,76 @@ def scrape_derabo():
         "ticket_periods": len(ticket_events),
         "places_found": places_found,
         "api_schedules_received": len(schedules),
+        "detail_pages_checked": detail_pages_checked,
+        "errors": errors[:10],
+    })
+    return list(unique.values()), status
+
+
+# ============================================================
+# JSON出力
+# ============================================================
+
+def main():
+    events = []
+    report = {}
+
+    boys_events, report["BOYS AND MEN公式"] = scrape_boys()
+    events.extend(boys_events)
+
+    dera_events, report["でらボ公式スケジュール"] = scrape_derabo()
+    events.extend(dera_events)
+
+    report["でらボ公式NEWS"] = {
+        "ok": True,
+        "count": 0,
+        "note": "NEWS掲載日を開催日と誤認しないため自動登録対象外。",
+        "url": DERA_BASE + "/",
+    }
+
+    # 重複を除去
+    unique = {}
+    for item in events:
+        unique[(item["id"], item["date"], item["title"])] = item
+
+    sorted_events = sorted(
+        unique.values(),
+        key=lambda item: (
+            item.get("date", ""),
+            item.get("time", ""),
+            item.get("title", "").casefold(),
+        ),
+    )
+
+    data = {
+        "updated_at": datetime.now(JST).isoformat(timespec="seconds"),
+        "range": {
+            "from": START.isoformat(),
+            "to": END.isoformat(),
+        },
+        "sources": report,
+        "events": sorted_events,
+    }
+
+    os.makedirs("data", exist_ok=True)
+    with open("data/events.json", "w", encoding="utf-8") as output:
+        json.dump(data, output, ensure_ascii=False, indent=2)
+
+    print(f"Wrote {len(sorted_events)} events")
+    print(f"Places found: {sum(s.get('places_found', 0) for s in report.values())}")
+    print(f"Ticket periods: {sum(s.get('ticket_periods', 0) for s in report.values())}")
+
+    for name, status in report.items():
+        print(
+            f"- {name}: ok={status.get('ok')} "
+            f"count={status.get('count')} "
+            f"places={status.get('places_found', 0)} "
+            f"tickets={status.get('ticket_periods', 0)}"
+        )
+
+    if not any(status.get("ok") for status in report.values()):
+        sys.exit("All official sources failed; check network or site markup.")
+
+
+if __name__ == "__main__":
+    main()
