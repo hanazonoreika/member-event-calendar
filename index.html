@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="ja">
 <head>
@@ -23,14 +22,17 @@ button:disabled{opacity:.5;cursor:wait}
 button.primary{background:var(--navy);color:white;border-color:var(--navy)}
 button.danger{color:#a72e2e}
 .month{font-weight:750;font-size:1.2rem}
-.weekdays,.calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.calendar{display:flex;flex-direction:column;gap:4px}
+.week-row{min-width:0}
+.week-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
 .weekdays div{text-align:center;color:var(--muted);font-size:.76rem;padding:6px 0}
 .day{min-width:0;min-height:90px;border:1px solid var(--line);border-radius:8px;padding:4px;text-align:left;display:flex;flex-direction:column;gap:3px;overflow:hidden}
 .day.outside{background:#faf9f7;color:#aaa}
 .day.today{border:2px solid var(--navy)}
 .day.selected{box-shadow:inset 0 0 0 2px #d5a642}
 .daynum{font-size:.8rem;font-weight:700}
-.pill{font-size:.64rem;line-height:1.25;border-radius:4px;padding:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.pill{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:.64rem;line-height:1.25;border-radius:4px;padding:3px;overflow:hidden;white-space:normal;overflow-wrap:anywhere;word-break:break-word;max-height:calc(1.25em * 2 + 6px)}
 .legend{display:flex;flex-wrap:wrap;gap:7px 10px;font-size:.75rem;margin:12px 0}
 .legend span{display:flex;align-items:center;gap:4px}
 .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0}
@@ -55,6 +57,9 @@ a{color:#245f9e;overflow-wrap:anywhere}
 .map-link{font-weight:600}
 .calendar-wrap{min-width:0}
 .period-section{margin-top:10px}
+/* Ticket bars are rendered directly beneath the corresponding calendar week. */
+.week-ticket-lane{min-width:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:minmax(23px,auto);gap:3px 4px;margin-top:3px}
+.week-ticket-lane:empty{display:none}
 .period-heading{font-size:.76rem;color:#8a5b27;margin:5px 0}
 .period-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
 .period-lane{min-width:0;min-height:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:minmax(23px,auto);gap:3px 4px}
@@ -68,10 +73,10 @@ a{color:#245f9e;overflow-wrap:anywhere}
 @media(max-width:740px){
  main{grid-template-columns:1fr}
  .day{min-height:65px;padding:3px}
- .pill{font-size:.56rem;padding:2px}
+ .pill{font-size:.56rem;padding:2px;max-height:calc(1.25em * 2 + 4px)}
  .panel{padding:11px}
  .period-bar{font-size:.56rem;padding:4px 3px}
- .weekdays,.calendar,.period-grid,.period-lane{gap:2px}
+ .weekdays,.week-days,.week-ticket-lane{gap:2px}
  .formrow{grid-template-columns:1fr}
 }
 </style>
@@ -100,12 +105,11 @@ a{color:#245f9e;overflow-wrap:anywhere}
 <div class="calendar" id="calendar"></div>
 
 <div class="period-section">
-<div class="period-key"><i></i>チケット受付期間（バーを押すと詳細を表示）</div>
-<div id="periodCalendar"></div>
+<div class="period-key"><i></i>チケット受付期間（カレンダー内のオレンジ色のバーを押すと詳細を表示）</div>
 </div>
 
 <div class="legend" id="legend"></div>
-<p class="small">日付を選ぶと、その日のイベントが表示されます。オレンジ色のバーはチケット受付期間です。</p>
+<p class="small">日付を選ぶと、その日のイベントが表示されます。オレンジ色のバーは受付開始日から終了日までを示します。</p>
 </section>
 
 <aside class="panel">
@@ -264,23 +268,51 @@ function render(){
  const first=new Date(month.getFullYear(),month.getMonth(),1);
  const start=new Date(first);
  start.setDate(1-first.getDay());
-
  const today=key(new Date());
+ const periodEvents=all().filter(e=>isPeriod(e)&&filtered(e));
  let out="";
 
- for(let i=0;i<42;i++){
-  const d=new Date(start);
-  d.setDate(start.getDate()+i);
-  const k=key(d);
-  const ev=all()
-   .filter(x=>!isPeriod(x)&&x.date===k&&filtered(x))
-   .sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+ for(let week=0;week<6;week++){
+  const weekStart=new Date(start);
+  weekStart.setDate(start.getDate()+week*7);
+  const weekEnd=new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate()+6);
+  let daysHtml="";
 
-  out+=`<button type="button" class="day ${d.getMonth()!==month.getMonth()?"outside":""} ${k===today?"today":""} ${k===selected?"selected":""}" data-date="${k}">
-   <span class="daynum">${d.getDate()}</span>
-   ${ev.slice(0,3).map(x=>`<span class="pill" style="background:${eventColor(x)}35;border-left:3px solid ${eventColor(x)}">${esc(x.title)}</span>`).join("")}
-   ${ev.length>3?`<span class="small">ほか${ev.length-3}件</span>`:""}
-  </button>`;
+  for(let day=0;day<7;day++){
+   const d=new Date(weekStart);
+   d.setDate(weekStart.getDate()+day);
+   const k=key(d);
+   const ev=all()
+    .filter(x=>!isPeriod(x)&&x.date===k&&filtered(x))
+    .sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+
+   daysHtml+=`<button type="button" class="day ${d.getMonth()!==month.getMonth()?"outside":""} ${k===today?"today":""} ${k===selected?"selected":""}" data-date="${k}">
+    <span class="daynum">${d.getDate()}</span>
+    ${ev.slice(0,3).map(x=>`<span class="pill" style="background:${eventColor(x)}35;border-left:3px solid ${eventColor(x)}" title="${esc(x.title)}">${esc(x.title)}</span>`).join("")}
+    ${ev.length>3?`<span class="small">ほか${ev.length-3}件</span>`:""}
+   </button>`;
+  }
+
+  const lanes=[];
+  const bars=[];
+  for(const e of periodEvents){
+   const s=new Date(periodStart(e)+"T12:00:00");
+   const en=new Date(periodEnd(e)+"T12:00:00");
+   if(Number.isNaN(s.getTime())||Number.isNaN(en.getTime()))continue;
+   if(en<weekStart||s>weekEnd)continue;
+   const startCol=Math.max(0,Math.round((s-weekStart)/86400000));
+   const endCol=Math.min(7,Math.round((en-weekStart)/86400000)+1);
+   if(endCol<=startCol)continue;
+   let lane=0;
+   while(lanes[lane]!==undefined&&lanes[lane]>startCol)lane++;
+   lanes[lane]=endCol;
+   const label=e.title||"チケット受付";
+   bars.push(`<button type="button" class="period-bar" style="--start:${startCol+1};--end:${endCol+1};--lane:${lane+1}" data-period-id="${esc(e.id)}" title="${esc(label)}&#10;${esc(periodStart(e))} ～ ${esc(periodEnd(e))}">${esc(label)}</button>`);
+  }
+  const rowCount=lanes.length;
+  const ticketHtml=rowCount?`<div class="week-ticket-lane" style="grid-template-rows:repeat(${rowCount},minmax(23px,auto))">${bars.join("")}</div>`:"";
+  out+=`<div class="week-row"><div class="week-days">${daysHtml}</div>${ticketHtml}</div>`;
  }
  $("calendar").innerHTML=out;
 
@@ -296,48 +328,6 @@ function render(){
    render();
   };
  });
-
- renderPeriods(start);
- renderDay();
-}
-
-function renderPeriods(monthGridStart){
- const periodEvents=all().filter(e=>isPeriod(e)&&filtered(e));
- let html="";
-
- for(let week=0;week<6;week++){
-  const weekStart=new Date(monthGridStart);
-  weekStart.setDate(monthGridStart.getDate()+week*7);
-  const weekEnd=new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate()+6);
-
-  const lanes=[];
-  const bars=[];
-
-  for(const e of periodEvents){
-   const s=new Date(periodStart(e)+"T12:00:00");
-   const en=new Date(periodEnd(e)+"T12:00:00");
-   if(Number.isNaN(s.getTime())||Number.isNaN(en.getTime()))continue;
-   if(en<weekStart||s>weekEnd)continue;
-
-   const startCol=Math.max(0,Math.round((s-weekStart)/86400000));
-   const endCol=Math.min(7,Math.round((en-weekStart)/86400000)+1);
-   if(endCol<=startCol)continue;
-
-   let lane=0;
-   while(lanes[lane]!==undefined&&lanes[lane]>startCol)lane++;
-   lanes[lane]=endCol;
-
-   const label=e.title||"チケット受付";
-   bars.push(`<button type="button" class="period-bar" style="--start:${startCol+1};--end:${endCol+1};--lane:${lane+1}" data-period-id="${esc(e.id)}" title="${esc(label)}&#10;${esc(periodStart(e))} ～ ${esc(periodEnd(e))}">${esc(label)}</button>`);
-  }
-
-  const rowCount=Math.max(1,lanes.length);
-  html+=`<div class="period-lane" style="grid-template-rows:repeat(${rowCount},minmax(23px,auto));margin-bottom:4px">${bars.join("")}</div>`;
- }
-
- $("periodCalendar").innerHTML=html;
-
  document.querySelectorAll("[data-period-id]").forEach(button=>{
   button.onclick=()=>{
    const e=all().find(x=>x.id===button.dataset.periodId);
@@ -348,6 +338,7 @@ function renderPeriods(monthGridStart){
    showPeriodDetail(e);
   };
  });
+ renderDay();
 }
 
 function showPeriodDetail(e){
