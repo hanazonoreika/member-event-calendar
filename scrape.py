@@ -719,12 +719,15 @@ def get_derabo_api_schedules(token):
             f"{type(payload).__name__}"
         )
 
-    data = payload.get("data", {})
-    if not isinstance(data, dict):
-        raise ValueError(
-            f"Bitfan APIのdata形式が想定外です: {str(data)[:300]}"
-        )
+  schedules = payload.get("schedules")
 
+if not isinstance(schedules, list):
+    raise ValueError(
+        "Bitfan APIのschedulesがリストではありません。"
+        f"レスポンスキー: {list(payload.keys())}"
+    )
+
+return schedules
     schedules = data.get("schedules")
     if not isinstance(schedules, list):
         raise ValueError(
