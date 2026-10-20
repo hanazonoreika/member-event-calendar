@@ -671,6 +671,7 @@ def get_derabo_token(soup):
     return ""
 
 
+
 def get_derabo_api_schedules(token):
     """Bitfan公式APIから対象期間のスケジュールを取得する。"""
     api_url = f"{DERA_API_BASE}/fanclubs/dxboys/schedules"
@@ -692,6 +693,16 @@ def get_derabo_api_schedules(token):
         headers=headers,
         timeout=TIMEOUT,
     )
+
+    # 調査用ログ：認証トークンは出力しない
+    print("DERABO_API_STATUS:", response.status_code, file=sys.stderr)
+    print("DERABO_API_URL:", response.url, file=sys.stderr)
+    print(
+        "DERABO_API_BODY:",
+        response.text[:1000],
+        file=sys.stderr,
+    )
+
     response.raise_for_status()
 
     try:
@@ -722,7 +733,6 @@ def get_derabo_api_schedules(token):
         )
 
     return schedules
-
 
 def parse_derabo_datetime(value):
     """Bitfan APIの日付・日時から開催日を取得する。"""
