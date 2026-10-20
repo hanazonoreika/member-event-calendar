@@ -1,20 +1,21 @@
 
 #!/usr/bin/env python3
-"""Official event calendar scraper with ticket-period extraction."""
-
+"""BOYS AND MEN・でらボ公式イベントカレンダー取得スクリプト。"""
 import hashlib
-import html
 import json
+import os
 import re
 import sys
-import os
-
 from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
-from urllib.parse import urljoin, urldefrag, urlparse, urlencode
+from urllib.parse import urljoin, urldefrag, urlparse
 
 import requests
 from bs4 import BeautifulSoup
+
+# ============================================================
+# 基本設定
+# ============================================================
 
 JST = timezone(timedelta(hours=9))
 TODAY = datetime.now(JST).date()
@@ -34,11 +35,8 @@ BOYS_CALENDAR = BOYS_BASE + "/vertical_calendar"
 DERA_BASE = "https://dxboys.bitfan.id"
 DERA_SCHEDULE = DERA_BASE + "/schedules/menu/184780"
 DERA_API_BASE = "https://user-api.bitfan.id"
-DERA_API_PAGE = DERA_SCHEDULE
 
-MEMBERS = [
-    "辻本達規", "田村侑久", "本田剛文", "平松賢人", "吉原雅斗"
-]
+MEMBERS = ["辻本達規", "田村侑久", "本田剛文", "平松賢人", "吉原雅斗"]
 
 HEADERS = {
     "User-Agent": (
@@ -51,17 +49,7 @@ HEADERS = {
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
 TIMEOUT = 25
-
 DETAIL_CACHE = {}
-
-EXCLUDED_URLS = {
-    "https://boysandmen.jp/about/membership",
-    "https://boysandmen.jp/about/account",
-    "https://boysandmen.jp/about/law",
-    "https://boysandmen.jp/help",
-    "https://boysandmen.jp/about/payment",
-    "https://boysandmen.jp/about/customer_harassment",
-}
 
 EXCLUDED_PATHS = (
     "/about", "/help", "/contact", "/faq", "/privacy",
@@ -72,15 +60,16 @@ EXCLUDED_PATHS = (
 SKIP_TITLES = [
     "F.ENT IDについて", "お客さまへのお願い",
     "お支払いについて", "よくあるご質問", "よくある質問",
-    "ボイメン☆ファミリーとは", "特商法に基づく表示",
-    "お問い合わせ", "お問合せ", "会社概要",
-    "プライバシーポリシー", "利用規約", "サイトマップ",
-    "ログイン", "ログアウト", "会員登録", "ファンクラブ",
-    "Powered by", "前月へ", "次月へ",
-    "パワープレイソングに決定", "HOME", "トップページ",
-    "SCHEDULE", "NEWS",
+    "特商法に基づく表示", "お問い合わせ", "お問合せ",
+    "会社概要", "プライバシーポリシー", "利用規約",
+    "サイトマップ", "ログイン", "ログアウト", "会員登録",
+    "Powered by", "前月へ", "次月へ", "HOME",
+    "トップページ", "SCHEDULE", "NEWS",
 ]
 
+# ============================================================
+# 共通処理
+# ============================================================
 
 def normalize(text):
     return " ".join((text or "").replace("\xa0", " ").split())
@@ -94,44 +83,32 @@ def get_soup(url):
 
 
 def parse_full_date(text):
+    """年を含む日付のみを取得。年の推測はしない。"""
+    text = normalize(text)
     match = re.search(
         r"(20\d{2})\s*[年/.\-]\s*(\d{1,2})\s*[月/.\-]\s*(\d{1,2})\s*日?",
-        normalize(text),
+        text,
     )
     if not match:
         return None
     try:
         return date(
-            int(match.group(1)), int(match.group(2)), int(match.group(3))
+            int(match.group(1)),
+            int(match.group(2)),
+            int(match.group(3)),
         )
     except ValueError:
         return None
 
 
-def parse_api_datetime(value):
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(
-            str(value).strip().replace("Z", "+00:00")
-        )
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=JST)
-        else:
-            parsed = parsed.astimezone(JST)
-        return parsed
-    except (ValueError, TypeError):
-        return None
-
-
 def member_for(title, detail_text=""):
-    matches = [m for m in MEMBERS if m in normalize(title)]
+    matches = [member for member in MEMBERS if member in title]
     if len(matches) == 1:
         return matches[0]
     if len(matches) > 1:
         return "その他"
 
-    matches = [m for m in MEMBERS if m in normalize(detail_text)]
+    matches = [member for member in MEMBERS if member in detail_text]
     if len(matches) == 1:
         return matches[0]
     return "グループ全体"
@@ -139,7 +116,6 @@ def member_for(title, detail_text=""):
 
 def classify(text):
     text = normalize(text)
-
     if any(x in text for x in ["特典会", "お渡し会", "サイン会", "リミスタ"]):
         return "特典会"
     if any(x in text for x in ["ラジオ", "RADIO", "FM "]):
@@ -161,7 +137,7 @@ def should_skip_title(title):
     title = normalize(title)
     if len(title) < 4 or title.startswith("▼"):
         return True
-    return any(x.casefold() in title.casefold() for x in SKIP_TITLES)
+    return any(word.casefold() in title.casefold() for word in SKIP_TITLES)
 
 
 def is_excluded_boys_url(url):
@@ -170,10 +146,6 @@ def is_excluded_boys_url(url):
         return True
 
     path = parsed.path.rstrip("/") or "/"
-    normalized_url = f"https://boysandmen.jp{path}"
-
-    if normalized_url in {u.rstrip("/") for u in EXCLUDED_URLS}:
-        return True
     if path == "/vertical_calendar" or path.startswith("/vertical_calendar/"):
         return True
 
@@ -183,12 +155,8 @@ def is_excluded_boys_url(url):
     )
 
 
-def make_event(
-    source, event_date, title, url, detail_text="",
-    event_time="", place=""
-):
+def make_event(source, event_date, title, url, detail_text=""):
     title = normalize(title)
-
     if should_skip_title(title):
         return None
     if not START <= event_date <= END:
@@ -202,269 +170,357 @@ def make_event(
     return {
         "id": f"{source}-{event_id}",
         "date": event_date.isoformat(),
-        "time": event_time,
+        "time": "",
         "title": title,
         "member": member_for(title, detail_text),
         "type": classify(title),
-        "place": normalize(place),
+        "place": "",
         "url": url,
-        "notes": (
-            "公式ページから自動取得。"
-            "日時・出演者・会場はリンク先で確認してください。"
-        ),
+        "notes": "公式ページから自動取得。詳細はリンク先で確認してください。",
         "source": source,
         "origin": "official",
         "unconfirmed": False,
     }
 
 
-# --------------------------------------------------
-# 公式詳細ページの本文を取得
-# --------------------------------------------------
+# ============================================================
+# 詳細ページ解析：会場・住所・チケット受付期間
+# ============================================================
 
-def extract_page_text(url):
-    """詳細ページの文章を取得。取得失敗時は空文字。"""
-    if not url or not url.startswith(("https://boysandmen.jp",
-                                       "https://www.boysandmen.jp",
-                                       DERA_BASE)):
-        return ""
-
+def get_detail_lines(url):
+    """詳細ページの本文を行単位で取得し、URLごとにキャッシュする。"""
     if url in DETAIL_CACHE:
         return DETAIL_CACHE[url]
 
     try:
         soup = get_soup(url)
 
-        for node in soup.select(
-            "script, style, noscript, nav, footer, header, "
-            "form, button, .breadcrumb, .breadcrumbs, "
-            ".sns-share, .share-buttons"
+        for tag in soup.select(
+            "script, style, noscript, nav, footer, header, iframe"
         ):
-            node.decompose()
+            tag.decompose()
 
         lines = []
-        for node in soup.find_all(
-            ["h1", "h2", "h3", "h4", "p", "li", "dt", "dd", "tr"]
+        for node in soup.select(
+            "h1, h2, h3, h4, p, li, dt, dd, th, td, "
+            "strong, b, time, .schedule-detail, .event-detail"
         ):
-            line = normalize(node.get_text(" ", strip=True))
-            if line and line not in lines:
-                lines.append(line)
+            text = normalize(node.get_text(" ", strip=True))
+            if text and text not in lines:
+                lines.append(text)
 
+        # ページ内の情報が通常のタグに入っていない場合の補助
         if not lines:
-            target = soup.body or soup
             lines = [
-                normalize(x) for x in target.get_text("\n").splitlines()
-                if normalize(x)
+                normalize(line)
+                for line in soup.get_text("\n").splitlines()
+                if normalize(line)
             ]
 
-        result = "\n".join(lines).strip()
-        if len(result) > 12000:
-            result = result[:12000]
-
+        result = {
+            "lines": lines,
+            "text": "\n".join(lines),
+            "soup": soup,
+        }
         DETAIL_CACHE[url] = result
         return result
 
     except Exception as exc:
-        print(
-            f"WARN DETAIL {url}: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-        )
-        DETAIL_CACHE[url] = ""
+        print(f"WARN 詳細ページ取得 {url}: {exc}", file=sys.stderr)
+        result = {"lines": [], "text": "", "soup": None}
+        DETAIL_CACHE[url] = result
+        return result
+
+
+def clean_place(value):
+    """会場欄に混入したラベルや余計な空白を整える。"""
+    value = normalize(value)
+    value = re.sub(
+        r"^(?:会場名?|開催場所|開催会場|場所|住所|所在地|Venue|Location)\s*[：:]\s*",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = value.strip(" ：:　")
+    if not value or len(value) > 180:
         return ""
+    if any(word in value for word in [
+        "受付期間", "当選発表", "支払期間", "販売期間",
+        "お問い合わせ", "注意事項", "出演者",
+    ]):
+        return ""
+    return value
 
 
-# --------------------------------------------------
-# チケット受付期間の抽出
-# --------------------------------------------------
+def extract_place_from_detail(detail):
+    """公式詳細ページに明記された会場名または住所を探す。"""
+    soup = detail.get("soup")
+    lines = detail.get("lines", [])
+
+    if soup:
+        # テーブル形式：左セルが「会場」、右セルが会場名
+        for row in soup.select("tr"):
+            cells = row.find_all(["th", "td"], recursive=False)
+            if len(cells) >= 2:
+                label = normalize(cells[0].get_text(" ", strip=True))
+                if any(word in label for word in ["会場", "開催場所", "住所", "所在地"]):
+                    value = clean_place(cells[1].get_text(" ", strip=True))
+                    if value:
+                        return value
+
+        # 定義リスト形式：dt「会場」→ dd「会場名」
+        for node in soup.select("dt"):
+            label = normalize(node.get_text(" ", strip=True))
+            if any(word in label for word in ["会場", "開催場所", "住所", "所在地"]):
+                sibling = node.find_next_sibling("dd")
+                if sibling:
+                    value = clean_place(sibling.get_text(" ", strip=True))
+                    if value:
+                        return value
+
+    labels = (
+        "開催会場", "開催場所", "会場名", "会場",
+        "所在地", "住所", "Venue", "Location",
+    )
+
+    for index, line in enumerate(lines):
+        for label in labels:
+            match = re.match(
+                rf"^{re.escape(label)}\s*[：:]\s*(.+)$",
+                line,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                value = clean_place(match.group(1))
+                if value:
+                    return value
+
+            if line.strip().casefold() == label.casefold():
+                # ラベルだけの行なら次の数行から値を探す
+                for following in lines[index + 1:index + 3]:
+                    value = clean_place(following)
+                    if value and not any(
+                        word in following
+                        for word in ["受付期間", "出演者", "チケット情報"]
+                    ):
+                        return value
+
+    return ""
+
 
 DATE_PATTERN = re.compile(
-    r"(?P<year>20\d{2})\s*[年/.\-]\s*"
-    r"(?P<month>\d{1,2})\s*[月/.\-]\s*"
-    r"(?P<day>\d{1,2})\s*日?"
+    r"(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日"
+    r"|"
+    r"(20\d{2})[/.\-](\d{1,2})[/.\-](\d{1,2})"
 )
-
-TIME_PATTERN = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)")
-
-TICKET_WORDS = (
-    "受付", "チケット", "抽選", "先着", "販売",
-    "プレイガイド", "FC", "ファンクラブ", "先行",
-    "申込", "申し込み", "申込み",
-)
+TIME_PATTERN = re.compile(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)(?!\d)")
 
 
-def date_from_match(match):
-    try:
-        return date(
-            int(match.group("year")),
-            int(match.group("month")),
-            int(match.group("day")),
-        )
-    except (ValueError, TypeError):
-        return None
+def find_dates(text):
+    found = []
+    for match in DATE_PATTERN.finditer(text):
+        groups = match.groups()
+        if groups[0]:
+            y, m, d = int(groups[0]), int(groups[1]), int(groups[2])
+        else:
+            y, m, d = int(groups[3]), int(groups[4]), int(groups[5])
+        try:
+            found.append((match.start(), match.end(), date(y, m, d)))
+        except ValueError:
+            continue
+    return found
 
 
-def time_in_text(text):
-    matches = list(TIME_PATTERN.finditer(text or ""))
-    if not matches:
-        return ""
-    match = matches[-1]
-    hour = int(match.group(1))
-    minute = int(match.group(2))
-    if hour > 23 or minute > 59:
-        return ""
-    return f"{hour:02d}:{minute:02d}"
-
-
-def ticket_kind(context):
-    text = normalize(context)
+def ticket_kind(text):
+    text = normalize(text)
 
     if "FC" in text or "ファンクラブ" in text:
-        if "抽選" in text:
-            return "FC抽選受付"
-        if "先着" in text:
-            return "FC先着受付"
-        return "FC受付"
+        prefix = "FC"
+    elif "先行" in text:
+        prefix = "先行"
+    elif "一般" in text:
+        prefix = "一般"
+    else:
+        prefix = ""
 
-    if "一般" in text and "先着" in text:
-        return "一般先着販売"
-    if "一般" in text and "抽選" in text:
-        return "一般抽選受付"
-    if "先行" in text and "抽選" in text:
-        return "先行抽選受付"
-    if "先行" in text and "先着" in text:
-        return "先行先着販売"
     if "抽選" in text:
-        return "抽選受付"
+        return f"{prefix}抽選受付" if prefix else "抽選受付"
     if "先着" in text:
-        return "先着販売"
-    if "一般" in text:
-        return "一般販売"
+        return f"{prefix}先着販売" if prefix else "先着販売"
     if "販売" in text:
-        return "チケット販売"
-    return "チケット受付"
+        return f"{prefix}販売" if prefix else "チケット販売"
+    return f"{prefix}受付" if prefix else "チケット受付"
 
 
-def extract_ticket_periods(detail_text, source, parent_title, source_url):
-    """
-    本文中のチケット関連箇所から、開始日・終了日が明記された
-    期間だけを抽出する。推測で日付を補わない。
-    """
-    if not detail_text:
+def extract_ticket_periods(detail, source, parent_title, source_url):
+    """受付期間の開始日・終了日が明記されている場合だけ期間予定を作る。"""
+    lines = detail.get("lines", [])
+    if not lines:
         return []
 
-    lines = [
-        normalize(line) for line in detail_text.splitlines()
-        if normalize(line)
-    ]
-    found = {}
-    used_ranges = set()
+    results = []
+    seen = set()
+    ticket_words = (
+        "受付", "チケット", "抽選", "先着", "販売",
+        "プレイガイド", "FC", "ファンクラブ",
+        "先行", "申込", "申し込み", "申込み",
+    )
+    range_pattern = re.compile(r"～|〜|~|−|－|–|—|-|から")
 
-    for i in range(len(lines)):
-        # 1～3行を連結し、見出しと日付が改行されている場合にも対応
+    for index, line in enumerate(lines):
+        # 別のHTML要素に分かれている日付範囲も調べる
         for span in (1, 2, 3):
-            if i + span > len(lines):
+            if index + span >= len(lines):
                 continue
 
-            candidate = " ".join(lines[i:i + span])
-            date_matches = list(DATE_PATTERN.finditer(candidate))
+            candidate_lines = lines[index:index + span + 1]
+            candidate = " ".join(candidate_lines)
+            dates = find_dates(candidate)
 
-            if len(date_matches) < 2:
+            if len(dates) < 2:
                 continue
 
-            first, second = date_matches[0], date_matches[1]
-            separator = candidate[first.end():second.start()]
+            for first, second in zip(dates, dates[1:]):
+                start_pos, start_end, start_date = first
+                end_pos, end_end, end_date = second
 
-            # 2つの日付が範囲として書かれているものだけ対象にする
-            if not re.search(r"(?:～|〜|~|−|－|–|—|-|から)", separator):
-                continue
+                if end_date < start_date:
+                    continue
 
-            start_date = date_from_match(first)
-            end_date = date_from_match(second)
+                between = candidate[start_end:end_pos]
+                if not range_pattern.search(between):
+                    continue
 
-            if not start_date or not end_date or end_date < start_date:
-                continue
+                context_start = max(0, index - 2)
+                context_end = min(len(lines), index + span + 4)
+                context_lines = lines[context_start:context_end]
+                context = " ".join(context_lines)
 
-            # 受付・販売などの言葉が近くにあるか確認
-            context_lines = lines[max(0, i - 3):min(len(lines), i + span + 3)]
-            context = " ".join(context_lines)
+                if not any(word.casefold() in context.casefold() for word in ticket_words):
+                    continue
 
-            if not any(word in context for word in TICKET_WORDS):
-                continue
+                # 公演日そのものを受付期間と誤認しないため、
+                # 受付・販売に関する語が近くにある範囲だけ採用する。
+                if not (START <= start_date <= END or START <= end_date <= END):
+                    continue
 
-            # 開催日だけの範囲を誤登録しないため、日付の周辺にも
-            # 受付・販売・抽選などの語があることを要求する
-            local_context = " ".join(lines[max(0, i - 2):min(len(lines), i + span + 2)])
-            if not any(word in local_context for word in TICKET_WORDS):
-                continue
+                start_time = ""
+                end_time = ""
 
-            # 受付期間の開始時刻と終了時刻
-            between = candidate[first.end():second.start()]
-            after_end = candidate[second.end():]
-            start_time = time_in_text(between)
-            end_time = time_in_text(after_end)
+                start_time_matches = list(TIME_PATTERN.finditer(between))
+                if start_time_matches:
+                    start_time = start_time_matches[-1].group(0)
 
-            # 期間が対象年月の範囲と重ならない場合は登録しない
-            if end_date < START or start_date > END:
-                continue
+                after_end = candidate[end_end:]
+                end_time_match = TIME_PATTERN.search(after_end)
+                if end_time_match:
+                    end_time = end_time_match.group(0)
+                else:
+                    # 終了日付と同じ行の後半にも時刻がある場合
+                    end_line = candidate[end_end:]
+                    end_time_match = TIME_PATTERN.search(end_line)
+                    if end_time_match:
+                        end_time = end_time_match.group(0)
 
-            kind = ticket_kind(context)
-            dedupe_key = (
-                source, start_date.isoformat(), end_date.isoformat(),
-                kind, parent_title, source_url,
-            )
-            if dedupe_key in used_ranges:
-                continue
-            used_ranges.add(dedupe_key)
+                # 受付開始日が期間外でも、表示期間と重なるものは残す
+                if end_date < START or start_date > END:
+                    continue
 
-            notes = [
-                f"受付期間：{start_date.isoformat()}"
-                + (f" {start_time}" if start_time else "")
-                + f" ～ {end_date.isoformat()}"
-                + (f" {end_time}" if end_time else ""),
-                f"対象イベント：{parent_title}",
-            ]
+                kind = ticket_kind(context)
+                period_title = f"【{kind}】{parent_title}"
+                period_id_source = (
+                    f"{source}|ticket|{start_date}|{end_date}|"
+                    f"{parent_title}|{source_url}|{kind}"
+                )
+                period_id = hashlib.sha256(
+                    period_id_source.encode("utf-8")
+                ).hexdigest()[:16]
 
-            # 当落発表・支払期限など、本文に明記された行を備考に保存
-            for line in context_lines:
-                if any(word in line for word in (
-                    "当選発表", "当落発表", "当落", "支払期間",
-                    "支払期限", "入金期間", "入金期限", "決済期限",
-                )):
-                    if line not in notes:
-                        notes.append(line)
+                note_parts = [
+                    f"受付期間：{start_date.isoformat()}"
+                    + (f" {start_time}" if start_time else "")
+                    + " ～ "
+                    + f"{end_date.isoformat()}"
+                    + (f" {end_time}" if end_time else ""),
+                    f"対象イベント：{parent_title}",
+                ]
 
-            raw_id = (
-                f"ticket|{source}|{start_date.isoformat()}|"
-                f"{end_date.isoformat()}|{kind}|{parent_title}|{source_url}"
-            )
-            ticket_id = hashlib.sha256(
-                raw_id.encode("utf-8")
-            ).hexdigest()[:16]
+                for extra in context_lines:
+                    if any(word in extra for word in [
+                        "当選発表", "当落", "支払期間", "支払期限",
+                        "入金期間", "入金期限", "決済期限",
+                    ]):
+                        if extra not in note_parts:
+                            note_parts.append(extra)
 
-            found[dedupe_key] = {
-                "id": f"ticket-{ticket_id}",
-                "date": start_date.isoformat(),
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "time": start_time,
-                "title": f"【{kind}】{parent_title}",
-                "member": "グループ全体",
-                "type": "チケット受付",
-                "place": "",
-                "url": source_url,
-                "notes": "\n".join(notes),
-                "source": source,
-                "origin": "official",
-                "unconfirmed": False,
-                "period_type": "ticket",
-            }
+                event = {
+                    "id": f"{source}-ticket-{period_id}",
+                    "date": start_date.isoformat(),
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "period_type": "ticket",
+                    "time": start_time,
+                    "title": period_title,
+                    "member": "",
+                    "type": "チケット受付",
+                    "place": "",
+                    "url": source_url,
+                    "notes": "\n".join(note_parts),
+                    "source": source,
+                    "origin": "official",
+                    "unconfirmed": False,
+                }
 
-    return list(found.values())
+                key = (
+                    event["start_date"],
+                    event["end_date"],
+                    event["title"],
+                    event["url"],
+                )
+                if key not in seen:
+                    seen.add(key)
+                    results.append(event)
+
+    return results
 
 
-# --------------------------------------------------
-# BOYS AND MEN公式カレンダー
-# --------------------------------------------------
+def enrich_event(item, include_ticket_periods=True):
+    """イベント詳細を調べて会場・チケット期間を追加する。"""
+    detail = get_detail_lines(item["url"])
+    if not detail.get("text"):
+        return [], False
+
+    place = extract_place_from_detail(detail)
+    if place:
+        item["place"] = place
+
+    # 既存の注記を残し、公式本文の一部を追記
+    notes = item.get("notes", "")
+    useful_lines = []
+
+    for line in detail.get("lines", []):
+        if any(word in line for word in [
+            "撮影指定ポーズ", "指定ポーズ", "衣装",
+            "ドレスコード", "服装", "注意事項",
+        ]):
+            if len(line) <= 300 and line not in useful_lines:
+                useful_lines.append(line)
+
+    if useful_lines:
+        item["notes"] = notes + "\n" + "\n".join(useful_lines)
+
+    periods = []
+    if include_ticket_periods:
+        periods = extract_ticket_periods(
+            detail, item["source"], item["title"], item["url"]
+        )
+
+    return periods, bool(place)
+
+
+# ============================================================
+# BOYS AND MEN
+# ============================================================
 
 def iter_month_urls():
     year, month = START.year, START.month
@@ -477,9 +533,11 @@ def iter_month_urls():
 
 
 def day_from_panel_id(node):
+    node_id = node.get("id", "")
     match = re.search(
         r"(?:collapse|schedule|day)[-_]?((?:20\d{2})\d{4})",
-        node.get("id", ""), re.I
+        node_id,
+        re.I,
     )
     if not match:
         return None
@@ -495,9 +553,9 @@ def nearest_heading_date(anchor):
     ):
         text = normalize(tag.get_text(" ", strip=True))
         if len(text) <= 45:
-            parsed = parse_full_date(text)
-            if parsed:
-                return parsed
+            event_date = parse_full_date(text)
+            if event_date:
+                return event_date
     return None
 
 
@@ -547,9 +605,7 @@ def scrape_boys_month(url):
 
 
 def scrape_boys():
-    all_events = []
-    errors = []
-    pages_ok = 0
+    all_events, errors, pages_ok = [], [], 0
     urls = list(iter_month_urls())
 
     for url in urls:
@@ -565,48 +621,37 @@ def scrape_boys():
         unique[(item["date"], item["title"].casefold(), item["url"])] = item
 
     base_events = list(unique.values())
-
-    # チケット受付情報は開催日が近いイベントの詳細ページを確認する。
-    # 過去の全イベントを毎回大量取得しないよう、過去30日～未来1年に限定。
-    detail_from = TODAY - timedelta(days=30)
-    detail_to = END
-    candidate_urls = {}
-
-    for item in base_events:
-        try:
-            event_date = date.fromisoformat(item["date"])
-        except (ValueError, TypeError):
-            continue
-
-        if detail_from <= event_date <= detail_to:
-            if item["url"].startswith(BOYS_BASE + "/contents/"):
-                candidate_urls[item["url"]] = item["title"]
-
     ticket_events = []
-    detail_pages_ok = 0
+    detail_checked = 0
+    places_found = 0
 
-    for detail_url, parent_title in candidate_urls.items():
-        detail_text = extract_page_text(detail_url)
-        if not detail_text:
+    # 過去分を大量に取り直さないよう、直近30日～未来の詳細を調べる
+    for item in base_events:
+        event_date = date.fromisoformat(item["date"])
+        if event_date < TODAY - timedelta(days=30):
+            continue
+        if event_date > END:
+            continue
+        if not item["url"].startswith(BOYS_BASE + "/contents/"):
             continue
 
-        detail_pages_ok += 1
-        ticket_events.extend(
-            extract_ticket_periods(
-                detail_text, "boys", parent_title, detail_url
-            )
-        )
+        detail_checked += 1
+        periods, found_place = enrich_event(item)
+        ticket_events.extend(periods)
+        if found_place:
+            places_found += 1
 
-    combined = {}
-    for item in base_events + ticket_events:
-        combined[(item["id"], item["date"], item["title"])] = item
+    combined = base_events + ticket_events
+    result = {}
+    for item in combined:
+        result[(item["id"], item["date"], item["title"])] = item
 
-    return list(combined.values()), {
+    return list(result.values()), {
         "ok": pages_ok > 0,
         "count": len(base_events),
         "ticket_periods": len(ticket_events),
-        "detail_pages_checked": len(candidate_urls),
-        "detail_pages_ok": detail_pages_ok,
+        "places_found": places_found,
+        "detail_pages_checked": detail_checked,
         "pages_ok": pages_ok,
         "pages_tried": len(urls),
         "errors": errors[:8],
@@ -614,233 +659,148 @@ def scrape_boys():
     }
 
 
-# --------------------------------------------------
-# でらボ公式スケジュール API
-# --------------------------------------------------
+# ============================================================
+# でらボ（Bitfan）
+# ============================================================
 
-def extract_derabo_detail(url):
-    return extract_page_text(url)
-
-
-def get_derabo_token():
-    response = SESSION.get(DERA_API_PAGE, timeout=TIMEOUT)
-    response.raise_for_status()
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    token_tag = soup.select_one('meta[name="jwt-token"]')
-
-    if not token_tag:
-        raise RuntimeError("公式ページにjwt-tokenが見つかりません。")
-
-    token = normalize(token_tag.get("content", ""))
-    if not token:
-        raise RuntimeError("jwt-tokenのcontentが空です。")
-
-    return token
+def get_derabo_token(soup):
+    node = soup.select_one('meta[name="jwt-token"]')
+    if node:
+        return node.get("content", "").strip()
+    return ""
 
 
-def iter_derabo_months():
-    year, month = START.year, START.month
+def collect_derabo_schedule_links(soup, page_url):
+    links = []
+    for anchor in soup.select("a[href]"):
+        title = normalize(anchor.get_text(" ", strip=True))
+        href = urldefrag(urljoin(page_url, anchor.get("href", "")))[0]
 
-    while (year, month) <= (END.year, END.month):
-        month_start = date(year, month, 1)
-        if month == 12:
-            next_month = date(year + 1, 1, 1)
+        if not title or len(title) < 4:
+            continue
+        if urlparse(href).netloc.lower() != urlparse(DERA_BASE).netloc.lower():
+            continue
+
+        path = urlparse(href).path
+        if not path.startswith("/schedules/") or "/menu/" in path:
+            continue
+        if should_skip_title(title):
+            continue
+
+        links.append((title, href))
+
+    return list(dict.fromkeys(links))
+
+
+def get_schedule_detail_date(soup, title):
+    event_date = parse_full_date(title)
+    if event_date:
+        return event_date
+
+    for selector in ["time[datetime]", ".schedule-date", ".event-date", ".date"]:
+        node = soup.select_one(selector)
+        if not node:
+            continue
+
+        if node.name == "time" and node.get("datetime"):
+            event_date = parse_full_date(node["datetime"])
         else:
-            next_month = date(year, month + 1, 1)
+            event_date = parse_full_date(node.get_text(" ", strip=True))
 
-        yield month_start, next_month
-        year, month = next_month.year, next_month.month
+        if event_date:
+            return event_date
 
-
-def make_derabo_detail_url(schedule):
-    schedule_id = schedule.get("id")
-    if schedule_id is None:
-        return DERA_SCHEDULE
-
-    token = schedule.get("encoded_repeat_token")
-    query = "?" + urlencode({"r": str(token)}) if token else ""
-    return f"{DERA_BASE}/schedules/{schedule_id}{query}"
-
-
-def get_schedules_from_payload(payload):
-    if isinstance(payload, dict):
-        data = payload.get("data", payload)
-        if isinstance(data, dict):
-            schedules = data.get("schedules")
-            if isinstance(schedules, list):
-                return schedules
-        if isinstance(data, list):
-            return data
-    return []
+    # ページ全体の日付は掲載日かもしれないため開催日とみなさない
+    return None
 
 
 def scrape_derabo():
     events = []
     errors = []
-    months_checked = 0
-    requests_ok = 0
-    api_records = 0
-    detail_pages_ok = 0
-    ticket_count = 0
 
     try:
-        jwt_token = get_derabo_token()
+        schedule_soup = get_soup(DERA_SCHEDULE)
     except Exception as exc:
         return [], {
-            "ok": False, "count": 0, "api_records": 0,
-            "months_checked": 0, "requests_ok": 0,
-            "detail_pages_ok": 0, "ticket_periods": 0,
-            "errors": [f"トークン取得失敗: {type(exc).__name__}: {exc}"],
+            "ok": False,
+            "count": 0,
+            "error": f"{type(exc).__name__}: {exc}",
             "url": DERA_SCHEDULE,
-            "api_url": DERA_API_BASE + "/fanclubs/dxboys/schedules",
         }
 
-    api_url = DERA_API_BASE + "/fanclubs/dxboys/schedules"
-    api_headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/json",
-        "Referer": DERA_SCHEDULE,
-    }
+    links = collect_derabo_schedule_links(schedule_soup, DERA_SCHEDULE)
+    checked = 0
+    ticket_events = []
+    places_found = 0
 
-    for month_start, next_month in iter_derabo_months():
-        params = {
-            "from_date": month_start.isoformat(),
-            "to_date": next_month.isoformat(),
-        }
-
+    # 詳細ページを順に確認
+    for link_title, detail_url in links[:150]:
         try:
-            response = SESSION.get(
-                api_url, params=params, headers=api_headers, timeout=TIMEOUT
+            detail_soup = get_soup(detail_url)
+            checked += 1
+
+            heading = detail_soup.select_one("h1")
+            title = normalize(heading.get_text(" ", strip=True)) if heading else link_title
+            if not title:
+                title = link_title
+
+            event_date = get_schedule_detail_date(detail_soup, title)
+            if not event_date:
+                continue
+
+            body = normalize(detail_soup.get_text(" ", strip=True))
+            item = make_event("dera", event_date, title, detail_url, body)
+            if not item:
+                continue
+
+            # 既に取得した詳細ページをキャッシュから解析
+            detail = get_detail_lines(detail_url)
+            item["place"] = extract_place_from_detail(detail)
+
+            useful_lines = [
+                line for line in detail.get("lines", [])
+                if any(word in line for word in [
+                    "撮影指定ポーズ", "指定ポーズ", "衣装",
+                    "ドレスコード", "服装", "注意事項",
+                ])
+                and len(line) <= 300
+            ]
+            if useful_lines:
+                item["notes"] += "\n" + "\n".join(dict.fromkeys(useful_lines))
+
+            if item["place"]:
+                places_found += 1
+
+            periods = extract_ticket_periods(
+                detail, "dera", title, detail_url
             )
-            months_checked += 1
-
-            if response.status_code in (401, 403):
-                errors.append(
-                    f"{params['from_date']}: API認証エラー HTTP "
-                    f"{response.status_code}"
-                )
-                continue
-
-            response.raise_for_status()
-
-            try:
-                payload = response.json()
-            except ValueError as exc:
-                errors.append(
-                    f"{params['from_date']}: JSON解析失敗: {exc}"
-                )
-                continue
-
-            schedules = get_schedules_from_payload(payload)
-            requests_ok += 1
-            api_records += len(schedules)
-
-            for schedule in schedules:
-                if not isinstance(schedule, dict):
-                    continue
-
-                title = normalize(
-                    html.unescape(str(schedule.get("title") or ""))
-                )
-                if not title or should_skip_title(title):
-                    continue
-
-                start_value = (
-                    schedule.get("start_datetime")
-                    or schedule.get("start_date")
-                )
-                start_dt = parse_api_datetime(start_value)
-
-                if start_dt:
-                    event_date = start_dt.date()
-                    event_time = start_dt.strftime("%H:%M")
-                else:
-                    event_date = parse_full_date(str(start_value or ""))
-                    event_time = ""
-
-                if not event_date:
-                    errors.append(f"日付を解析できない予定: {title}")
-                    continue
-
-                detail_url = make_derabo_detail_url(schedule)
-                end_dt = parse_api_datetime(schedule.get("end_datetime"))
-                place = (
-                    schedule.get("place")
-                    or schedule.get("venue")
-                    or schedule.get("location")
-                    or ""
-                )
-
-                detail_text = extract_derabo_detail(detail_url)
-                if detail_text:
-                    detail_pages_ok += 1
-
-                item = make_event(
-                    "dera", event_date, title, detail_url,
-                    detail_text=detail_text,
-                    event_time=event_time,
-                    place=str(place),
-                )
-
-                if item:
-                    if end_dt:
-                        item["notes"] += (
-                            " 終了日時: "
-                            + end_dt.strftime("%Y-%m-%d %H:%M")
-                            + "。"
-                        )
-
-                    if detail_text:
-                        item["notes"] += (
-                            "\n\n【公式詳細ページの記載】\n" + detail_text
-                        )
-
-                    events.append(item)
-
-                periods = extract_ticket_periods(
-                    detail_text, "dera", title, detail_url
-                )
-                events.extend(periods)
-                ticket_count += len(periods)
+            ticket_events.extend(periods)
+            events.append(item)
 
         except Exception as exc:
-            errors.append(
-                f"{params['from_date']}～{params['to_date']}: "
-                f"{type(exc).__name__}: {exc}"
-            )
-            print(
-                f"WARN DERA API {params['from_date']}: {exc}",
-                file=sys.stderr,
-            )
+            errors.append(f"{detail_url}: {type(exc).__name__}: {exc}")
+            print(f"WARN DERA {detail_url}: {exc}", file=sys.stderr)
 
+    all_events = events + ticket_events
     unique = {}
-    for item in events:
+    for item in all_events:
         unique[(item["id"], item["date"], item["title"])] = item
 
     return list(unique.values()), {
-        "ok": requests_ok > 0,
-        "count": sum(
-            1 for item in unique.values()
-            if item.get("period_type") != "ticket"
-        ),
-        "ticket_periods": sum(
-            1 for item in unique.values()
-            if item.get("period_type") == "ticket"
-        ),
-        "api_records": api_records,
-        "months_checked": months_checked,
-        "requests_ok": requests_ok,
-        "detail_pages_ok": detail_pages_ok,
-        "errors": errors[:12],
+        "ok": True,
+        "count": len(events),
+        "ticket_periods": len(ticket_events),
+        "places_found": places_found,
+        "detail_links_found": len(links),
+        "detail_pages_checked": checked,
+        "errors": errors[:8],
         "url": DERA_SCHEDULE,
-        "api_url": api_url,
     }
 
 
-# --------------------------------------------------
-# メイン処理・JSON出力
-# --------------------------------------------------
+# ============================================================
+# JSON出力
+# ============================================================
 
 def main():
     events = []
@@ -855,13 +815,11 @@ def main():
     report["でらボ公式NEWS"] = {
         "ok": True,
         "count": 0,
-        "note": (
-            "NEWS掲載日を開催日と誤認しないため"
-            "自動登録対象外。"
-        ),
+        "note": "NEWS掲載日を開催日と誤認しないため自動登録対象外。",
         "url": DERA_BASE + "/",
     }
 
+    # 重複を除去
     unique = {}
     for item in events:
         unique[(item["id"], item["date"], item["title"])] = item
@@ -886,25 +844,23 @@ def main():
     }
 
     os.makedirs("data", exist_ok=True)
-
     with open("data/events.json", "w", encoding="utf-8") as output:
         json.dump(data, output, ensure_ascii=False, indent=2)
 
     print(f"Wrote {len(sorted_events)} events")
+    print(f"Places found: {sum(s.get('places_found', 0) for s in report.values())}")
+    print(f"Ticket periods: {sum(s.get('ticket_periods', 0) for s in report.values())}")
 
     for name, status in report.items():
         print(
-            f"- {name}: "
-            f"ok={status.get('ok')} "
+            f"- {name}: ok={status.get('ok')} "
             f"count={status.get('count')} "
-            f"ticket_periods={status.get('ticket_periods', 0)}"
+            f"places={status.get('places_found', 0)} "
+            f"tickets={status.get('ticket_periods', 0)}"
         )
-        print(json.dumps(status, ensure_ascii=False, indent=2))
 
     if not any(status.get("ok") for status in report.values()):
-        sys.exit(
-            "All official sources failed; check network or site markup."
-        )
+        sys.exit("All official sources failed; check network or site markup.")
 
 
 if __name__ == "__main__":
