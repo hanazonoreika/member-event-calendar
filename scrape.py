@@ -563,6 +563,29 @@ def collect_note_lines(detail):
     ))
 
 
+# 本文として載せたくない、メニューやフッター由来の行
+BODY_SKIP_WORDS = (
+    "ログイン", "会員登録", "プライバシー", "利用規約",
+    "お問い合わせ", "サイトマップ", "Copyright", "COPYRIGHT",
+    "HOME", "NEWS", "SCHEDULE",
+)
+
+
+def build_body_notes(detail, max_chars=1500):
+    """詳細ページの本文行から、メモ欄に入れる文章を作る。"""
+    picked = []
+    total = 0
+    for line in detail.get("lines", []):
+        if len(line) < 3:
+            continue
+        if any(word in line for word in BODY_SKIP_WORDS):
+            continue
+        if total + len(line) > max_chars:
+            break
+        picked.append(line)
+        total += len(line) + 1
+    return "\n".join(picked)
+    
 def enrich_event(item, update_member=False):
     """イベント詳細を調べて会場・注意事項・チケット期間を追加する。
 
@@ -580,10 +603,10 @@ def enrich_event(item, update_member=False):
     if place:
         item["place"] = place
 
-    note_lines = collect_note_lines(detail)
-    if note_lines:
-        item["notes"] += "\n" + "\n".join(note_lines)
-
+      body_notes = build_body_notes(detail)
+    if body_notes:
+        item["notes"] = body_notes
+        
     periods = extract_ticket_periods(
         detail, item["source"], item["title"], item["url"]
     )
