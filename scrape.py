@@ -659,8 +659,9 @@ def scrape_boys():
     }
 
 
+
 # ============================================================
-# でらボ（Bitfan）
+# でらボ（Bitfan API）
 # ============================================================
 
 def get_derabo_token(soup):
@@ -670,133 +671,255 @@ def get_derabo_token(soup):
     return ""
 
 
-def collect_derabo_schedule_links(soup, page_url):
-    links = []
-    for anchor in soup.select("a[href]"):
-        title = normalize(anchor.get_text(" ", strip=True))
-        href = urldefrag(urljoin(page_url, anchor.get("href", "")))[0]
+def get_derabo_api_schedules(token):
+    """Bitfan公式APIから対象期間のスケジュールを取得する。"""
+    api_url = f"{DERA_API_BASE}/fanclubs/dxboys/schedules"
 
-        if not title or len(title) < 4:
-            continue
-        if urlparse(href).netloc.lower() != urlparse(DERA_BASE).netloc.lower():
-            continue
+    params = {
+        "from_date": START.isoformat(),
+        "to_date": (END + timedelta(days=1)).isoformat(),
+    }
 
-        path = urlparse(href).path
-        if not path.startswith("/schedules/") or "/menu/" in path:
-            continue
-        if should_skip_title(title):
-            continue
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Referer": DERA_SCHEDULE,
+        "Accept": "application/json, text/plain, */*",
+    }
 
-        links.append((title, href))
+    response = SESSION.get(
+        api_url,
+        params=params,
+        headers=headers,
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
 
-    return list(dict.fromkeys(links))
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ValueError(
+            f"Bitfan APIがJSON以外を返しました: "
+            f"{response.text[:300]}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"Bitfan APIのレスポンス形式が想定外です: "
+            f"{type(payload).__name__}"
+        )
+
+    data = payload.get("data", {})
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Bitfan APIのdata形式が想定外です: {str(data)[:300]}"
+        )
+
+    schedules = data.get("schedules")
+    if not isinstance(schedules, list):
+        raise ValueError(
+            "Bitfan APIのdata.schedulesがリストではありません。"
+            f"レスポンスキー: {list(data.keys())}"
+        )
+
+    return schedules
 
 
-def get_schedule_detail_date(soup, title):
-    event_date = parse_full_date(title)
-    if event_date:
-        return event_date
+def parse_derabo_datetime(value):
+    """Bitfan APIの日付・日時から開催日を取得する。"""
+    if not value:
+        return None
 
-    for selector in ["time[datetime]", ".schedule-date", ".event-date", ".date"]:
-        node = soup.select_one(selector)
-        if not node:
-            continue
+    parsed = parse_full_date(str(value))
+    if parsed:
+        return parsed
 
-        if node.name == "time" and node.get("datetime"):
-            event_date = parse_full_date(node["datetime"])
-        else:
-            event_date = parse_full_date(node.get_text(" ", strip=True))
+    try:
+        parsed_datetime = datetime.fromisoformat(
+            str(value).replace("Z", "+00:00")
+        )
+        if parsed_datetime.tzinfo:
+            parsed_datetime = parsed_datetime.astimezone(JST)
+        return parsed_datetime.date()
+    except (ValueError, TypeError):
+        return None
 
-        if event_date:
-            return event_date
 
-    # ページ全体の日付は掲載日かもしれないため開催日とみなさない
-    return None
+def build_derabo_detail_url(schedule):
+    """APIのスケジュール情報から公式詳細ページURLを作る。"""
+    schedule_id = schedule.get("id")
+    if schedule_id is None:
+        return ""
+
+    detail_url = f"{DERA_BASE}/schedules/{schedule_id}"
+    repeat_token = schedule.get("encoded_repeat_token")
+
+    if repeat_token:
+        from urllib.parse import urlencode
+        detail_url += "?" + urlencode({"r": repeat_token})
+
+    return detail_url
 
 
 def scrape_derabo():
     events = []
+    ticket_events = []
     errors = []
+    places_found = 0
+    detail_pages_checked = 0
 
+    # 1. 公式スケジュールページからJWTを取得
     try:
         schedule_soup = get_soup(DERA_SCHEDULE)
+        token = get_derabo_token(schedule_soup)
+
+        if not token:
+            raise ValueError(
+                "公式スケジュールページにJWTトークンがありません。"
+            )
+
     except Exception as exc:
         return [], {
             "ok": False,
             "count": 0,
-            "error": f"{type(exc).__name__}: {exc}",
+            "ticket_periods": 0,
+            "places_found": 0,
+            "detail_pages_checked": 0,
+            "errors": [f"JWT取得失敗: {type(exc).__name__}: {exc}"],
             "url": DERA_SCHEDULE,
         }
 
-    links = collect_derabo_schedule_links(schedule_soup, DERA_SCHEDULE)
-    checked = 0
-    ticket_events = []
-    places_found = 0
+    # 2. APIからスケジュール一覧を取得
+    try:
+        schedules = get_derabo_api_schedules(token)
 
-    # 詳細ページを順に確認
-    for link_title, detail_url in links[:150]:
+    except Exception as exc:
+        return [], {
+            "ok": False,
+            "count": 0,
+            "ticket_periods": 0,
+            "places_found": 0,
+            "errors": [
+                f"API取得失敗: {type(exc).__name__}: {exc}"
+            ],
+            "url": DERA_API_BASE + "/fanclubs/dxboys/schedules",
+        }
+
+    print(
+        f"DERA API: {len(schedules)} schedules received",
+        file=sys.stderr,
+    )
+
+    # 3. 開催日時・タイトルからイベントを作成
+    for schedule in schedules:
         try:
-            detail_soup = get_soup(detail_url)
-            checked += 1
-
-            heading = detail_soup.select_one("h1")
-            title = normalize(heading.get_text(" ", strip=True)) if heading else link_title
-            if not title:
-                title = link_title
-
-            event_date = get_schedule_detail_date(detail_soup, title)
-            if not event_date:
+            if not isinstance(schedule, dict):
                 continue
 
-            body = normalize(detail_soup.get_text(" ", strip=True))
-            item = make_event("dera", event_date, title, detail_url, body)
+            title = normalize(schedule.get("title", ""))
+            event_date = parse_derabo_datetime(
+                schedule.get("start_datetime")
+            )
+
+            if not title:
+                errors.append(
+                    f"タイトルなし: {str(schedule)[:200]}"
+                )
+                continue
+
+            if not event_date:
+                errors.append(
+                    f"開催日解析失敗: {title} / "
+                    f"{schedule.get('start_datetime')}"
+                )
+                continue
+
+            detail_url = build_derabo_detail_url(schedule)
+            if not detail_url:
+                errors.append(f"詳細URL作成失敗: {title}")
+                continue
+
+            item = make_event(
+                "dera",
+                event_date,
+                title,
+                detail_url,
+            )
             if not item:
                 continue
 
-            # 既に取得した詳細ページをキャッシュから解析
+            # 4. 詳細ページから会場・注意事項・受付期間を取得
             detail = get_detail_lines(detail_url)
-            item["place"] = extract_place_from_detail(detail)
+            detail_pages_checked += 1
 
-            useful_lines = [
-                line for line in detail.get("lines", [])
-                if any(word in line for word in [
-                    "撮影指定ポーズ", "指定ポーズ", "衣装",
-                    "ドレスコード", "服装", "注意事項",
-                ])
-                and len(line) <= 300
-            ]
-            if useful_lines:
-                item["notes"] += "\n" + "\n".join(dict.fromkeys(useful_lines))
+            if detail.get("text"):
+                # 詳細ページのタイトルや本文にメンバー名が
+                # 含まれている場合はメンバー判定にも使う
+                item["member"] = member_for(
+                    title, detail["text"]
+                )
 
-            if item["place"]:
-                places_found += 1
+                place = extract_place_from_detail(detail)
+                if place:
+                    item["place"] = place
+                    places_found += 1
 
-            periods = extract_ticket_periods(
-                detail, "dera", title, detail_url
-            )
-            ticket_events.extend(periods)
+                useful_lines = [
+                    line
+                    for line in detail.get("lines", [])
+                    if any(word in line for word in [
+                        "撮影指定ポーズ",
+                        "指定ポーズ",
+                        "衣装",
+                        "ドレスコード",
+                        "服装",
+                        "注意事項",
+                    ])
+                    and len(line) <= 300
+                ]
+
+                if useful_lines:
+                    item["notes"] += "\n" + "\n".join(
+                        dict.fromkeys(useful_lines)
+                    )
+
+                ticket_events.extend(
+                    extract_ticket_periods(
+                        detail,
+                        "dera",
+                        title,
+                        detail_url,
+                    )
+                )
+
             events.append(item)
 
         except Exception as exc:
-            errors.append(f"{detail_url}: {type(exc).__name__}: {exc}")
-            print(f"WARN DERA {detail_url}: {exc}", file=sys.stderr)
+            message = (
+                f"{schedule.get('title', '(タイトル不明)')}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            errors.append(message)
+            print(f"WARN DERA {message}", file=sys.stderr)
 
-    all_events = events + ticket_events
+    # 5. 重複を除去
+    combined = events + ticket_events
     unique = {}
-    for item in all_events:
+
+    for item in combined:
         unique[(item["id"], item["date"], item["title"])] = item
 
-    return list(unique.values()), {
+    result = list(unique.values())
+
+    return result, {
         "ok": True,
         "count": len(events),
         "ticket_periods": len(ticket_events),
         "places_found": places_found,
-        "detail_links_found": len(links),
-        "detail_pages_checked": checked,
-        "errors": errors[:8],
+        "api_schedules_received": len(schedules),
+        "detail_pages_checked": detail_pages_checked,
+        "errors": errors[:10],
         "url": DERA_SCHEDULE,
     }
-
 
 # ============================================================
 # JSON出力
