@@ -719,7 +719,7 @@ def get_derabo_api_schedules(token):
             f"{type(payload).__name__}"
         )
 
-  schedules = payload.get("schedules")
+    schedules = payload.get("schedules")
 
 if not isinstance(schedules, list):
     raise ValueError(
