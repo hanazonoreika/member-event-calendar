@@ -603,7 +603,7 @@ def enrich_event(item, update_member=False):
     if place:
         item["place"] = place
 
-      body_notes = build_body_notes(detail)
+    body_notes = build_body_notes(detail)
     if body_notes:
         item["notes"] = body_notes
         
