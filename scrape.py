@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode, urljoin, urldefrag, urlparse
@@ -860,7 +861,34 @@ def detail_from_schedule(schedule):
 
     return {"lines": lines, "text": "\n".join(lines), "place": place}
 
+def body_text_from_schedule(schedule):
+    """APIのbody(HTML)を、読みやすい複数行テキストにする。"""
+    body = schedule.get("body")
+    if not isinstance(body, str) or not body.strip():
+        return ""
 
+    soup = BeautifulSoup(body, "html.parser")
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    for p in soup.find_all("p"):
+        p.append("\n")
+
+    lines = [normalize(line) for line in soup.get_text().splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def time_from_schedule(schedule, body_text):
+    """開始時刻を取り出す。終日予定のときは本文から探す。"""
+    if not schedule.get("all_day_flag"):
+        match = re.search(r"T(\d{2}:\d{2})", str(schedule.get("start_datetime", "")))
+        if match:
+            return match.group(1)
+
+    # 全角の「10：10」を半角にそろえてから探す
+    text = unicodedata.normalize("NFKC", body_text)
+    match = TIME_PATTERN.search(text)
+    return match.group(0) if match else ""
+    
 def merge_details(html_detail, api_detail):
     """HTML解析とAPI由来の情報を統合する(重複行は除く)。"""
     lines = list(html_detail.get("lines", []))
@@ -941,19 +969,23 @@ def scrape_derabo():
             if not item:
                 continue
 
-            # 4. 詳細ページ(HTML)とAPIのJSONを統合して会場・受付期間を取得
+                 # 4. APIのJSONだけから、会場・本文・時刻・受付期間を取得
             detail_pages_checked += 1
-            html_detail = get_detail(detail_url)
-            api_detail = detail_from_schedule(schedule)
-            DETAIL_CACHE[detail_url] = merge_details(html_detail, api_detail)
+            DETAIL_CACHE[detail_url] = detail_from_schedule(schedule)
 
             periods, found_place = enrich_event(item, update_member=True)
             ticket_events.extend(periods)
             if found_place:
                 places_found += 1
 
-            events.append(item)
+            # 本文をそのままメモ欄に入れ、時刻も反映する
+            body_text = body_text_from_schedule(schedule)
+            if body_text:
+                item["notes"] = body_text[:1500]
+            item["time"] = time_from_schedule(schedule, body_text)
 
+            events.append(item)
+            
         except Exception as exc:
             title_text = (
                 schedule.get("title", "(タイトル不明)")
