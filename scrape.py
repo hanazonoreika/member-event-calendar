@@ -591,29 +591,44 @@ def build_body_notes(detail, max_chars=1500):
     return "\n".join(picked)
     
 def enrich_event(item, update_member=False):
-    """イベント詳細を調べて会場・注意事項・チケット期間を追加する。
+    """詳細ページ本文から会場・特典会情報・注意事項・チケット期間を取得する。"""
 
-    戻り値: (チケット期間イベントのリスト, 会場が見つかったか)
-    """
     detail = get_detail(item["url"])
+
     if not detail.get("text"):
         return [], False
 
-    if update_member:
-        # タイトルにメンバー名がない場合のみ、本文から判定する
-        item["member"] = member_for(item["title"], detail["text"])
+    body_text = detail.get("text", "")
 
+    if update_member:
+        item["member"] = member_for(item["title"], body_text)
+
+    # 会場情報を取得
     place = detail.get("place", "")
     if place:
         item["place"] = place
 
-    body_notes = build_body_notes(detail)
-    if body_notes:
-        item["notes"] = body_notes
-        
+    # 本文に「特典会」と「衣装」の両方があれば特典会として登録
+    if "特典会" in body_text and "衣装" in body_text:
+        item["type"] = "特典会"
+
+        # 本文に該当語句があることをメモにも残す
+        item["notes"] = "本文キーワード検出：特典会・衣装\n" + body_text[:1500]
+
+    else:
+        # 通常イベントも本文の注意事項などを保存
+        body_notes = build_body_notes(detail)
+        if body_notes:
+            item["notes"] = body_notes
+
+    # チケット受付期間を取得
     periods = extract_ticket_periods(
-        detail, item["source"], item["title"], item["url"]
+        detail,
+        item["source"],
+        item["title"],
+        item["url"],
     )
+
     return periods, bool(place)
 
 
