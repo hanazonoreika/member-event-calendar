@@ -7,116 +7,182 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
 <title>【非公式】 統合イベントカレンダー</title>
 <style>
-:root{--bg:#f6f4f1;--card:#fff;--ink:#262626;--muted:#777;--line:#e8e4df;--navy:#263b56;--ticket:#e58b32}
+:root{--bg:#f6f4f1;--card:#fff;--ink:#262626;--muted:#777;--line:#e8e4df;--navy:#263b56;--ticket:#e58b32;--sun:#c0392b;--sat:#245f9e}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif}
-header{background:var(--navy);color:white;padding:20px max(15px,calc((100% - 1200px)/2))}
-h1{font-size:clamp(1.2rem,3vw,1.7rem);margin:0 0 5px}
-header p{margin:0;color:#dbe3ee;font-size:.9rem}
-main{max-width:1200px;margin:18px auto;padding:0 12px 32px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.9fr);gap:14px}
-.panel{background:white;border:1px solid var(--line);border-radius:15px;padding:14px;min-width:0}
-.toolbar{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+header{background:var(--navy);color:white;padding:18px max(15px,calc((100% - 1200px)/2))}
+h1{font-size:clamp(1.15rem,3vw,1.6rem);margin:0 0 4px}
+header p{margin:0;color:#dbe3ee;font-size:.88rem}
+main{max-width:1200px;margin:14px auto;padding:0 12px 32px}
+/* sticky toolbar */
+.toolbar{position:sticky;top:0;z-index:20;background:var(--bg);padding:6px 0 8px}
+.toolbar-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 button,input,select,textarea{font:inherit}
-button{border:1px solid #d8d4cf;background:white;border-radius:9px;padding:8px 11px;cursor:pointer}
+button{border:1px solid #d8d4cf;background:white;border-radius:9px;padding:8px 12px;cursor:pointer;font-size:.9rem}
 button:hover{filter:brightness(.97)}
 button:disabled{opacity:.5;cursor:wait}
 button.primary{background:var(--navy);color:white;border-color:var(--navy)}
 button.danger{color:#a72e2e}
-.month{font-weight:750;font-size:1.2rem}
-.weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
-.calendar{display:flex;flex-direction:column;gap:4px}
-.week-row{min-width:0}
-.week-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
-.weekdays div{text-align:center;color:var(--muted);font-size:.76rem;padding:6px 0}
-.day{min-width:0;min-height:90px;border:1px solid var(--line);border-radius:8px;padding:4px;text-align:left;display:flex;flex-direction:column;gap:3px;overflow:hidden}
-.day.outside{background:#faf9f7;color:#aaa}
-.day.today{border:2px solid var(--navy)}
-.day.selected{box-shadow:inset 0 0 0 2px #d5a642}
-.daynum{font-size:.8rem;font-weight:700}
-.pill{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:.64rem;line-height:1.25;border-radius:4px;padding:3px;overflow:hidden;white-space:normal;overflow-wrap:anywhere;word-break:break-word;max-height:calc(1.25em * 2 + 6px)}
-.legend{display:flex;flex-wrap:wrap;gap:7px 10px;font-size:.75rem;margin:12px 0}
-.legend span{display:flex;align-items:center;gap:4px}
+.month{font-weight:750;font-size:1.25rem;margin-right:auto}
+.seg{display:flex;border:1px solid #d8d4cf;border-radius:9px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:8px 14px;background:white}
+.seg button.active{background:var(--navy);color:white}
+.badge{display:inline-block;min-width:20px;text-align:center;background:var(--ticket);color:white;border-radius:20px;font-size:.72rem;padding:1px 6px;margin-left:5px;vertical-align:2px}
+.filter-summary{font-size:.8rem;color:var(--muted);margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* filter panel */
+.filters{background:white;border:1px solid var(--line);border-radius:13px;padding:12px;margin-bottom:12px}
+.filters label{font-size:.8rem;font-weight:650;display:grid;gap:4px;margin-bottom:10px}
+.filters label:last-child{margin-bottom:0}
+input,select,textarea{width:100%;border:1px solid #d8d4cf;border-radius:8px;padding:9px;background:white}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chipbtn{border-radius:20px;padding:6px 12px;font-size:.85rem;display:inline-flex;align-items:center;gap:6px}
+.chipbtn.active{border-color:var(--navy);box-shadow:inset 0 0 0 1.5px var(--navy);font-weight:700}
 .dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0}
-.muted{font-size:.82rem;color:var(--muted);line-height:1.5}
-.small{font-size:.72rem;color:var(--muted)}
-.status{font-size:.78rem;line-height:1.6;background:#f4f1eb;padding:9px;border-radius:8px;overflow-wrap:anywhere}
-.status.ok{background:#eaf6ec}
-.status.warn{background:#fff2dc}
-.cards{display:flex;flex-direction:column;gap:8px}
-.event{border:1px solid var(--line);border-radius:10px;padding:10px}
-.event h3{font-size:.9rem;margin:0 0 5px;overflow-wrap:anywhere}
-.meta{font-size:.77rem;color:#666;line-height:1.6;overflow-wrap:anywhere}
-.chip{display:inline-block;font-size:.7rem;border-radius:20px;padding:3px 7px;background:#f0eeeb;margin:5px 3px 0 0}
-label{font-size:.8rem;font-weight:650;display:grid;gap:4px;margin-bottom:9px}
-input,select,textarea{width:100%;border:1px solid #d8d4cf;border-radius:8px;padding:8px;background:white}
-input[type=checkbox]{width:auto}
-textarea{min-height:75px}
-.formrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
-.actions button{font-size:.76rem;padding:6px 8px}
+/* layout */
+.layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(290px,.9fr);gap:14px;align-items:start}
+.panel{background:white;border:1px solid var(--line);border-radius:15px;padding:14px;min-width:0}
+aside.panel{position:sticky;top:118px}
+/* calendar */
+.weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.weekdays div{text-align:center;color:var(--muted);font-size:.8rem;font-weight:650;padding:6px 0}
+.weekdays div.sun{color:var(--sun)}
+.weekdays div.sat{color:var(--sat)}
+.calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.day{min-width:0;min-height:84px;border:1px solid var(--line);border-radius:9px;padding:5px;text-align:left;display:flex;flex-direction:column;gap:5px;background:white}
+.day.outside{background:#faf9f7;color:#b5b0aa}
+.day.selected{box-shadow:inset 0 0 0 2.5px var(--ticket)}
+.daynum{font-size:.88rem;font-weight:700;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%}
+.daynum.sun{color:var(--sun)}
+.daynum.sat{color:var(--sat)}
+.day.today.daynum{background:var(--navy);color:white}
+.dots{display:flex;flex-wrap:wrap;gap:3px;padding:0 2px}
+.dots i{width:8px;height:8px;border-radius:50%;display:block}
+.count{font-size:.72rem;color:var(--muted);padding:0 2px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:.78rem;margin-top:12px}
+.legend span{display:flex;align-items:center;gap:5px}
+/* list view */
+.listday{margin-bottom:14px}
+.listday h3{font-size:.95rem;margin:0 0 7px;padding-bottom:4px;border-bottom:2px solid var(--line)}
+.listday h3.sun{color:var(--sun)}
+.listday h3.sat{color:var(--sat)}
+/* ticket cards */
+.ticket-head{display:flex;align-items:baseline;gap:8px;margin:18px 0 9px}
+.ticket-head h2{font-size:1.02rem;margin:0}
+.ticket-head.small{margin-left:auto}
+.tickets{display:flex;flex-direction:column;gap:8px}
+.ticket{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;border:1px solid #f0d9bd;background:#fff8ef;border-radius:11px;padding:10px 12px}
+.ticket:hover{background:#fdf0dd}
+.ticket.bar{width:5px;align-self:stretch;border-radius:3px;background:var(--ticket);flex-shrink:0}
+.ticket h3{font-size:.92rem;margin:0 0 3px;line-height:1.45}
+.ticket.meta{font-size:.78rem;color:#7a5a30;line-height:1.55}
+.pillbadge{display:inline-block;font-size:.7rem;font-weight:700;border-radius:20px;padding:2px 8px;background:var(--ticket);color:white;white-space:nowrap;margin-top:2px}
+.pillbadge.soon{background:#fff;color:#a35b12;border:1px solid var(--ticket)}
+.pillbadge.before{background:#fff;color:#666;border:1px solid #ccc}
+/* day detail / cards */
+.cards{display:flex;flex-direction:column;gap:9px}
+.event{border:1px solid var(--line);border-radius:11px;padding:11px}
+.event h3{font-size:.95rem;margin:0 0 5px;line-height:1.5;overflow-wrap:anywhere}
+.meta{font-size:.8rem;color:#666;line-height:1.65;overflow-wrap:anywhere}
+.chip{display:inline-block;font-size:.7rem;border-radius:20px;padding:3px 8px;background:#f0eeeb;margin:5px 3px 0 0}
+.chip.official{background:#e8eef5;color:#2c4a6b;font-weight:650}
+.muted{font-size:.85rem;color:var(--muted);line-height:1.6}
+.small{font-size:.75rem;color:var(--muted)}
+.notes{font-size:.85rem;color:#555;line-height:1.65;margin:7px 0 0;overflow-wrap:anywhere}
+details.notes summary{cursor:pointer;color:#245f9e;font-size:.8rem}
+details.notes p{margin:6px 0 0;font-size:.85rem;color:#555;line-height:1.65}
+.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.actions button{font-size:.78rem;padding:6px 10px}
 a{color:#245f9e;overflow-wrap:anywhere}
 .map-link{font-weight:600}
-.calendar-wrap{min-width:0}
-.period-section{margin-top:10px}
-.week-ticket-lane{min-width:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:minmax(23px,auto);gap:3px 4px;margin-top:3px}
-.week-ticket-lane:empty{display:none}
-.period-heading{font-size:.76rem;color:#8a5b27;margin:5px 0}
-.period-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
-.period-lane{min-width:0;min-height:0;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:minmax(23px,auto);gap:3px 4px}
-.period-bar{grid-column:var(--start)/var(--end);grid-row:var(--lane);min-width:0;border:0;border-radius:5px;background:#f8dfc3;color:#744311;text-align:left;padding:4px 6px;font-size:.66rem;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.period-bar:hover{background:#f2c999}
-.period-bar:focus-visible{outline:2px solid var(--navy);outline-offset:1px}
-.period-key{display:inline-flex;align-items:center;gap:5px;font-size:.75rem;color:#744311;margin:7px 0}
-.period-key i{display:inline-block;width:12px;height:8px;border-radius:3px;background:var(--ticket)}
-#editor{grid-column:1/-1}
+.status{font-size:.8rem;line-height:1.6;background:#f4f1eb;padding:9px;border-radius:8px;overflow-wrap:anywhere}
+.status.ok{background:#eaf6ec}
+.status.warn{background:#fff2dc}
+details.manage{margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
+details.manage summary{cursor:pointer;font-weight:700;font-size:.92rem}
+details.manage.inner{margin-top:10px}
+/* editor */
+#editor{margin-top:14px}
+#editor label{font-size:.82rem;font-weight:650;display:grid;gap:4px;margin-bottom:10px}
+#editor input[type=checkbox]{width:auto}
+.formrow{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+textarea{min-height:75px}
 .hidden{display:none!important}
-@media(max-width:740px){
- main{grid-template-columns:1fr}
- .day{min-height:65px;padding:3px}
- .pill{font-size:.56rem;padding:2px;max-height:calc(1.25em * 2 + 4px)}
- .panel{padding:11px}
- .period-bar{font-size:.56rem;padding:4px 3px}
- .weekdays,.week-days,.week-ticket-lane{gap:2px}
- .formrow{grid-template-columns:1fr}
+footer{max-width:1200px;margin:0 auto;padding:0 12px 26px}
+@media(max-width:900px){
+.layout{grid-template-columns:1fr}
+aside.panel{position:static}
+.day{min-height:62px;padding:4px;gap:4px}
+.daynum{font-size:.82rem;width:23px;height:23px}
+.panel{padding:11px}
+.formrow{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
 <header>
 <h1>【非公式】 統合イベントカレンダー</h1>
-<p>　公式予定・会場マップ・チケット受付期間</p>
+<p>公式予定・会場マップ・チケット受付期間</p>
 </header>
 
 <main>
-<section class="panel calendar-wrap">
 <div class="toolbar">
-<div>
+<div class="toolbar-row">
 <button id="prev" type="button" aria-label="前の月">‹</button>
-<button id="today" type="button">今月</button>
+<button id="todayBtn" type="button">今月</button>
 <button id="next" type="button" aria-label="次の月">›</button>
-</div>
 <div class="month" id="month"></div>
+<div class="seg" role="group" aria-label="表示切替">
+<button id="viewMonth" type="button" class="active">月表示</button>
+<button id="viewList" type="button">リスト</button>
+</div>
+<button id="filterToggle" type="button" aria-expanded="true">絞り込み・検索<span class="badge hidden" id="filterBadge"></span></button>
 <button class="primary" id="add" type="button">＋ 予定追加</button>
 </div>
+<div class="filter-summary" id="filterSummary"></div>
+</div>
 
+<div class="filters hidden" id="filterPanel">
+<label>検索<input id="search" type="search" placeholder="イベント名・会場で検索"></label>
+<label>メンバー</label>
+<div class="chips" id="memberChips"></div>
+<label style="margin-top:10px">種類
+<select id="typeFilter">
+<option value="">すべて</option>
+<option>イベント</option><option>ライブ</option><option>リリース</option>
+<option>テレビ</option><option>ラジオ</option><option>舞台</option>
+<option>配信</option><option>特典会</option><option>チケット受付</option><option>その他</option>
+</select>
+</label>
+<div class="actions">
+<button id="clearFilters" type="button">条件をすべてクリア</button>
+</div>
+</div>
+
+<div class="layout">
+<section class="panel">
+<div id="monthView">
 <div class="weekdays">
-<div>日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div>土</div>
+<div class="sun">日</div><div>月</div><div>火</div><div>水</div><div>木</div><div>金</div><div class="sat">土</div>
 </div>
 <div class="calendar" id="calendar"></div>
-
-<div class="period-section">
-<div class="period-key"><i></i>チケット受付期間（カレンダー内のオレンジ色のバーを押すと詳細を表示）</div>
-</div>
-
 <div class="legend" id="legend"></div>
-<p class="small">日付を選ぶと、その日のイベントと、その日が受付期間に含まれるチケットが表示されます。オレンジ色のバーは受付開始日から終了日までを示します。</p>
+</div>
+<div id="listView" class="hidden"></div>
+
+<div class="ticket-head">
+<h2>🎫 チケット受付期間</h2>
+<span class="small" id="ticketCount"></span>
+</div>
+<div class="tickets" id="tickets"></div>
 </section>
 
 <aside class="panel">
-<h2 id="dayTitle">選択日の予定</h2>
+<h2 id="dayTitle" style="margin-top:0">選択日の予定</h2>
 <div id="dayEvents" class="cards"></div>
-<hr style="border:0;border-top:1px solid var(--line);margin:15px 0">
-<h2>公式データ更新</h2>
+
+<details class="manage">
+<summary>データ管理</summary>
+<div class="inner">
 <div id="status" class="status warn">更新情報を確認中…</div>
 <div class="actions">
 <button class="primary" id="refresh" type="button">公式データを再読込</button>
@@ -125,29 +191,14 @@ a{color:#245f9e;overflow-wrap:anywhere}
 <input type="file" id="file" accept="application/json" hidden>
 </div>
 <p class="muted">公式予定はGitHub Actionsで取得します。再読込は公開済みのJSONを読み直します。手動予定はこのブラウザ内に保存されます。</p>
-
-<label>メンバーで絞り込み
-<select id="memberFilter">
-<option value="">全員</option>
-<option>辻本達規</option><option>田村侑久</option><option>本田剛文</option>
-<option>平松賢人</option><option>吉原雅斗</option>
-<option>グループ全体</option><option>その他</option>
-</select>
-</label>
-
-<label>種類で絞り込み
-<select id="typeFilter">
-<option value="">すべて</option>
-<option>イベント</option><option>ライブ</option><option>リリース</option>
-<option>テレビ</option><option>ラジオ</option><option>舞台</option>
-<option>配信</option><option>特典会</option><option>チケット受付</option><option>その他</option>
-</select>
-</label>
+</div>
+</details>
 </aside>
+</div>
 
-<section class="panel" id="editor" style="display:none">
-<div class="toolbar">
-<h2 id="editorTitle">予定追加</h2>
+<section class="panel hidden" id="editor">
+<div class="toolbar-row" style="margin-bottom:10px">
+<h2 id="editorTitle" style="margin:0;margin-right:auto">予定追加</h2>
 <button id="close" type="button">閉じる</button>
 </div>
 <form id="form">
@@ -181,7 +232,7 @@ a{color:#245f9e;overflow-wrap:anywhere}
 <label>受付開始日<input id="startDate" type="date"></label>
 <label>受付終了日<input id="endDate" type="date"></label>
 </div>
-<p class="small">チケット受付期間を設定すると、カレンダー上に横長バーを表示します。</p>
+<p class="small">チケット受付期間を設定すると、チケット受付期間の欄に表示します。</p>
 </div>
 <label style="display:flex;align-items:center;gap:7px">
 <input id="unconfirmed" type="checkbox">未確認情報
@@ -193,6 +244,10 @@ a{color:#245f9e;overflow-wrap:anywhere}
 </form>
 </section>
 </main>
+
+<footer>
+<p class="small">このカレンダーは非公式のファンサイトです。最新情報は公式サイトでご確認ください。</p>
+</footer>
 
 <script>
 "use strict";
@@ -206,12 +261,17 @@ const COLORS={
  "グループ全体":"#7b6bc2",
  "その他":"#999"
 };
+const MEMBERS=["","辻本達規","田村侑久","本田剛文","平松賢人","吉原雅斗","グループ全体","その他"];
 const KEY="boimenCalendarManualV3";
 let official=[];
 let manual=readManual();
 let month=new Date();
 let selected=key(new Date());
 let busy=false;
+let view="month";
+let memberSel="";
+let detailMode="day"; // "day" | "period"
+let detailPeriod=null;
 
 const $=id=>document.getElementById(id);
 
@@ -255,9 +315,23 @@ function isPeriod(e){
 }
 function periodStart(e){return e.start_date||e.date;}
 function periodEnd(e){return e.end_date||e.date;}
-function filtered(e){
- const m=$("memberFilter").value, t=$("typeFilter").value;
- return (!m||e.member===m||isPeriod(e))&&(!t||e.type===t);
+function filtered(e,ignoreMember){
+ const t=$("typeFilter").value;
+ const q=$("search").value.trim().toLowerCase();
+ if(!ignoreMember && memberSel && e.member!==memberSel && !isPeriod(e))return false;
+ if(t && e.type!==t)return false;
+ if(q){
+  const hay=((e.title||"")+" "+(e.place||"")+" "+(e.member||"")).toLowerCase();
+  if(!hay.includes(q))return false;
+ }
+ return true;
+}
+function activeFilterCount(){
+ let n=0;
+ if(memberSel)n++;
+ if($("typeFilter").value)n++;
+ if($("search").value.trim())n++;
+ return n;
 }
 function mapUrl(place){
  return "https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(place);
@@ -270,101 +344,230 @@ function dateLabel(value){
  if(!value)return "";
  const d=new Date(value+"T12:00:00");
  if(Number.isNaN(d.getTime()))return value;
- return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+ const w="日月火水木金土"[d.getDay()];
+ return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${w}）`;
+}
+function shortDate(value){
+ if(!value)return "";
+ const d=new Date(value+"T12:00:00");
+ if(Number.isNaN(d.getTime()))return value;
+ const w="日月火水木金土"[d.getDay()];
+ return `${d.getMonth()+1}/${d.getDate()}（${w}）`;
 }
 function eventColor(e){return COLORS[e.member]||"#999";}
+function daysBetween(a,b){
+ return Math.round((new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/86400000);
+}
 
+/* ---------- filter panel ---------- */
+function buildMemberChips(){
+ $("memberChips").innerHTML=MEMBERS.map(m=>`
+  <button type="button" class="chipbtn ${memberSel===m?"active":""}" data-member="${esc(m)}">
+   ${m?`<i class="dot" style="background:${COLORS[m]}"></i>${esc(m)}`:"全員"}
+  </button>`).join("");
+ document.querySelectorAll("[data-member]").forEach(b=>{
+  b.onclick=()=>{memberSel=b.dataset.member;buildMemberChips();render();};
+ });
+}
+function syncFilterPanel(){
+ const open=!$("filterPanel").classList.contains("hidden");
+ $("filterToggle").setAttribute("aria-expanded",String(open));
+ const n=activeFilterCount();
+ $("filterBadge").textContent=n||"";
+ $("filterBadge").classList.toggle("hidden",!n);
+ const parts=[];
+ if(memberSel)parts.push(memberSel);
+ if($("typeFilter").value)parts.push($("typeFilter").value);
+ if($("search").value.trim())parts.push("「"+$("search").value.trim()+"」");
+ $("filterSummary").textContent=parts.length?("絞り込み中："+parts.join("・")):"";
+}
+$("filterToggle").onclick=()=>{
+ $("filterPanel").classList.toggle("hidden");
+ syncFilterPanel();
+};
+$("clearFilters").onclick=()=>{
+ memberSel="";$("typeFilter").value="";$("search").value="";
+ buildMemberChips();render();
+};
+$("search").addEventListener("input",render);
+$("typeFilter").onchange=render;
+
+/* ---------- render ---------- */
 function render(){
  $("month").textContent=month.getFullYear()+"年 "+(month.getMonth()+1)+"月";
+ syncFilterPanel();
+ if(view==="month")renderMonth();else renderList();
+ renderTickets();
+ renderDetail();
+}
 
+function renderMonth(){
+ $("monthView").classList.remove("hidden");
+ $("listView").classList.add("hidden");
  const first=new Date(month.getFullYear(),month.getMonth(),1);
  const start=new Date(first);
  start.setDate(1-first.getDay());
  const today=key(new Date());
- const periodEvents=all().filter(e=>isPeriod(e)&&filtered(e));
  let out="";
-
- for(let week=0;week<6;week++){
-  const weekStart=new Date(start);
-  weekStart.setDate(start.getDate()+week*7);
-  const weekEnd=new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate()+6);
-  let daysHtml="";
-
-  for(let day=0;day<7;day++){
-   const d=new Date(weekStart);
-   d.setDate(weekStart.getDate()+day);
-   const k=key(d);
-   const ev=all()
-    .filter(x=>!isPeriod(x)&&x.date===k&&filtered(x))
-    .sort((a,b)=>(a.time||"").localeCompare(b.time||""));
-
-   daysHtml+=`<button type="button" class="day ${d.getMonth()!==month.getMonth()?"outside":""} ${k===today?"today":""} ${k===selected?"selected":""}" data-date="${k}">
-    <span class="daynum">${d.getDate()}</span>
-    ${ev.slice(0,3).map(x=>`<span class="pill" style="background:${eventColor(x)}35;border-left:3px solid ${eventColor(x)}" title="${esc(x.title)}">${esc(x.title)}</span>`).join("")}
-    ${ev.length>3?`<span class="small">ほか${ev.length-3}件</span>`:""}
-   </button>`;
-  }
-
-  const lanes=[];
-  const bars=[];
-  for(const e of periodEvents){
-   const s=new Date(periodStart(e)+"T12:00:00");
-   const en=new Date(periodEnd(e)+"T12:00:00");
-   if(Number.isNaN(s.getTime())||Number.isNaN(en.getTime()))continue;
-   if(en<weekStart||s>weekEnd)continue;
-   const startCol=Math.max(0,Math.round((s-weekStart)/86400000));
-   const endCol=Math.min(7,Math.round((en-weekStart)/86400000)+1);
-   if(endCol<=startCol)continue;
-   let lane=0;
-   while(lanes[lane]!==undefined&&lanes[lane]>startCol)lane++;
-   lanes[lane]=endCol;
-   const label=e.title||"チケット受付";
-   bars.push(`<button type="button" class="period-bar" style="--start:${startCol+1};--end:${endCol+1};--lane:${lane+1}" data-period-id="${esc(e.id)}" title="${esc(label)}&#10;${esc(periodStart(e))} ～ ${esc(periodEnd(e))}">${esc(label)}</button>`);
-  }
-  const rowCount=lanes.length;
-  const ticketHtml=rowCount?`<div class="week-ticket-lane" style="grid-template-rows:repeat(${rowCount},minmax(23px,auto))">${bars.join("")}</div>`:"";
-  out+=`<div class="week-row"><div class="week-days">${daysHtml}</div>${ticketHtml}</div>`;
+ for(let i=0;i<42;i++){
+  const d=new Date(start);
+  d.setDate(start.getDate()+i);
+  const k=key(d);
+  const dow=d.getDay();
+  const ev=all().filter(x=>!isPeriod(x)&&x.date===k&&filtered(x));
+  const dots=[...new Set(ev.map(eventColor))].slice(0,7);
+  out+=`<button type="button" class="day ${d.getMonth()!==month.getMonth()?"outside":""} ${k===today?"today":""} ${k===selected&&detailMode==="day"?"selected":""}" data-date="${k}">
+   <span class="daynum ${dow===0?"sun":dow===6?"sat":""}">${d.getDate()}</span>
+   ${dots.length?`<span class="dots">${dots.map(c=>`<i style="background:${c}"></i>`).join("")}</span>`:""}
+   ${ev.length?`<span class="count">${ev.length}件</span>`:""}
+  </button>`;
  }
  $("calendar").innerHTML=out;
-
  $("legend").innerHTML=Object.entries(COLORS)
   .map(([name,color])=>`<span><i class="dot" style="background:${color}"></i>${esc(name)}</span>`)
   .join("");
+ bindDayButtons();
+}
 
+function renderList(){
+ $("monthView").classList.add("hidden");
+ $("listView").classList.remove("hidden");
+ const y=month.getFullYear(), m=month.getMonth();
+ const list=all()
+  .filter(x=>!isPeriod(x)&&filtered(x))
+  .filter(x=>{const d=new Date(x.date+"T12:00:00");return d.getFullYear()===y&&d.getMonth()===m;})
+  .sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")));
+ if(!list.length){
+  $("listView").innerHTML='<p class="muted">この月の予定は見つかりませんでした。</p>';
+  return;
+ }
+ let out="", cur="";
+ for(const e of list){
+  if(e.date!==cur){
+   cur=e.date;
+   const d=new Date(cur+"T12:00:00");
+   const dow=d.getDay();
+   out+=`${out?"</div>":""}<div class="listday"><h3>${d.getMonth()+1}月${d.getDate()}日（<span class="${dow===0?"sun":dow===6?"sat":""}">${"日月火水木金土"[dow]}</span>）</h3><div class="cards">`;
+  }
+  out+=eventCard(e,false);
+ }
+ $("listView").innerHTML=out+"</div></div>";
+ bindEditButtons();
+ bindDeleteButtons();
+ document.querySelectorAll("[data-goday]").forEach(b=>{
+  b.onclick=()=>{selected=b.dataset.goday;detailMode="day";render();};
+ });
+}
+
+function bindDayButtons(){
  document.querySelectorAll("[data-date]").forEach(button=>{
   button.onclick=()=>{
    selected=button.dataset.date;
+   detailMode="day";
    const d=new Date(selected+"T12:00:00");
    if(d.getMonth()!==month.getMonth())month=d;
    render();
+   if(window.matchMedia("(max-width:900px)").matches){
+    $("dayTitle").scrollIntoView({behavior:"smooth",block:"start"});
+   }
   };
  });
- document.querySelectorAll("[data-period-id]").forEach(button=>{
-  button.onclick=()=>{
-   const e=all().find(x=>x.id===button.dataset.periodId);
+}
+
+/* ---------- ticket periods ---------- */
+function renderTickets(){
+ const y=month.getFullYear(), m=month.getMonth();
+ const mStart=key(new Date(y,m,1)), mEnd=key(new Date(y,m+1,0));
+ const today=key(new Date());
+ const list=all()
+  .filter(e=>isPeriod(e)&&filtered(e,true))
+  .filter(e=>periodStart(e)<=mEnd&&periodEnd(e)>=mStart)
+  .sort((a,b)=>periodEnd(a).localeCompare(periodEnd(b)));
+ // 同じ受付（同じタイトル・期間）は1件にまとめる
+ const seen=new Set(), uniq=[];
+ for(const e of list){
+  const idk=(e.title||"")+"|"+periodStart(e)+"|"+periodEnd(e);
+  if(seen.has(idk))continue;
+  seen.add(idk);uniq.push(e);
+ }
+ $("ticketCount").textContent=uniq.length?uniq.length+"件":"";
+ if(!uniq.length){
+  $("tickets").innerHTML='<p class="muted">この月に受付期間が含まれるチケットはありません。</p>';
+  return;
+ }
+ $("tickets").innerHTML=uniq.map(e=>{
+  let badge="";
+  if(today<periodStart(e)){
+   badge=`<span class="pillbadge before">${shortDate(periodStart(e))}開始</span>`;
+  }else if(today>periodEnd(e)){
+   badge=`<span class="pillbadge before">受付終了</span>`;
+  }else{
+   const left=daysBetween(today,periodEnd(e));
+   badge=left<=3
+    ?`<span class="pillbadge">受付中・あと${left}日</span>`
+    :`<span class="pillbadge soon">受付中・あと${left}日</span>`;
+  }
+  return `<button type="button" class="ticket" data-period-id="${esc(e.id)}">
+   <span class="bar"></span>
+   <span style="min-width:0">
+    <h3>${esc(e.title)}</h3>
+    <span class="meta">${shortDate(periodStart(e))} ～ ${shortDate(periodEnd(e))}</span>
+   </span>
+   <span style="margin-left:auto">${badge}</span>
+  </button>`;
+ }).join("");
+ document.querySelectorAll("[data-period-id]").forEach(b=>{
+  b.onclick=()=>{
+   const e=all().find(x=>x.id===b.dataset.periodId);
    if(!e)return;
-   selected=periodStart(e);
-   month=new Date(selected+"T12:00:00");
-   render();
-   showPeriodDetail(e);
+   detailMode="period";
+   detailPeriod=e;
+   renderDetail();
+   if(window.matchMedia("(max-width:900px)").matches){
+    $("dayTitle").scrollIntoView({behavior:"smooth",block:"start"});
+   }
   };
  });
- renderDay();
 }
 
+/* ---------- detail panel ---------- */
+function notesHtml(e){
+ if(!e.notes)return "";
+ const t=String(e.notes);
+ if(t.length<=140)return `<p class="notes">${esc(t).replace(/\n/g,"<br>")}</p>`;
+ return `<details class="notes"><summary>メモ・注意事項（続きを読む）</summary><p>${esc(t).replace(/\n/g,"<br>")}</p></details>`;
+}
+function sourceChip(e){
+ if(e.origin==="official")return '<span class="chip official">公式</span>';
+ const label=e.source==="dera"?"でらボ公式":e.source==="boys"?"BOYS AND MEN公式":"手動登録";
+ return `<span class="chip">${label}</span>`;
+}
+function eventCard(e,withDayLink){
+ return `<article class="event">
+  <h3><i class="dot" style="background:${eventColor(e)}"></i> ${esc(e.title)}</h3>
+  <div class="meta">${esc(e.time||"時刻未定")} · ${esc(e.member||"")} · ${esc(e.type||"イベント")}</div>
+  ${e.place?`<div class="meta">📍 ${mapLink(e.place)}</div>`:`<div class="meta">📍 会場未取得 · <a href="${mapUrl(e.title)}" target="_blank" rel="noopener noreferrer">タイトルで地図検索 ↗</a></div>`}
+  <div>${sourceChip(e)}${e.unconfirmed?'<span class="chip">未確認</span>':""}</div>
+  ${notesHtml(e)}
+  ${safeUrl(e.url)?`<p style="margin:7px 0 0"><a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">公式・出典ページ ↗</a></p>`:""}
+  <div class="actions">
+   ${withDayLink?`<button type="button" data-goday="${esc(e.date)}">この日の予定を見る</button>`:""}
+   <button type="button" data-edit="${esc(e.id)}">編集</button>
+   <button class="danger" type="button" data-del="${esc(e.id)}">削除</button>
+  </div>
+ </article>`;
+}
 function periodCard(e){
- return `
-  <article class="event">
-   <h3>${esc(e.title)}</h3>
-   <div class="meta">受付期間：${esc(dateLabel(periodStart(e)))} ～ ${esc(dateLabel(periodEnd(e)))}</div>
-   ${e.notes?`<p class="muted">${esc(e.notes).replace(/\n/g,"<br>")}</p>`:""}
-   ${safeUrl(e.url)?`<p><a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">公式・出典ページ ↗</a></p>`:""}
-   ${e.place?`<p class="meta">📍 ${mapLink(e.place)}</p>`:""}
-   <div class="actions"><button type="button" data-edit="${esc(e.id)}">編集</button></div>
-  </article>`;
+ return `<article class="event">
+  <h3>${esc(e.title)}</h3>
+  <div class="meta">受付期間：${esc(dateLabel(periodStart(e)))} ～ ${esc(dateLabel(periodEnd(e)))}</div>
+  <div>${sourceChip(e)}</div>
+  ${notesHtml(e)}
+  ${safeUrl(e.url)?`<p style="margin:7px 0 0"><a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">公式・出典ページ ↗</a></p>`:""}
+  ${e.place?`<div class="meta">📍 ${mapLink(e.place)}</div>`:""}
+  <div class="actions"><button type="button" data-edit="${esc(e.id)}">編集</button></div>
+ </article>`;
 }
-
 function bindEditButtons(){
  document.querySelectorAll("[data-edit]").forEach(button=>{
   button.onclick=()=>{
@@ -373,48 +576,12 @@ function bindEditButtons(){
   };
  });
 }
-
-function showPeriodDetail(e){
- $("dayTitle").textContent="チケット受付期間";
- $("dayEvents").innerHTML=periodCard(e);
- bindEditButtons();
-}
-
-function renderDay(){
- const d=new Date(selected+"T12:00:00");
- $("dayTitle").textContent=(d.getMonth()+1)+"月"+d.getDate()+"日の予定";
-
- const list=all()
-  .filter(x=>!isPeriod(x)&&x.date===selected&&filtered(x))
-  .sort((a,b)=>(a.time||"").localeCompare(b.time||""));
-
- $("dayEvents").innerHTML=list.length?list.map(e=>`
-  <article class="event">
-   <h3><i class="dot" style="background:${eventColor(e)}"></i> ${esc(e.title)}</h3>
-   <div class="meta">${esc(e.time||"時刻未定")} · ${esc(e.member||"")} · ${esc(e.type||"イベント")}</div>
-   ${e.place?`<div class="meta">📍 ${mapLink(e.place)}</div>`:`<div class="meta">📍 会場未取得 · <a href="${mapUrl(e.title)}" target="_blank" rel="noopener noreferrer">タイトルで地図検索 ↗</a></div>`}
-   <span class="chip">${e.origin==="official"?"公式取得":e.source==="dera"?"でらボ公式":e.source==="boys"?"BOYS AND MEN公式":"手動登録"}</span>
-   ${e.unconfirmed?'<span class="chip">未確認</span>':""}
-   ${e.notes?`<p class="muted">${esc(e.notes).replace(/\n/g,"<br>")}</p>`:""}
-   ${safeUrl(e.url)?`<p><a href="${esc(safeUrl(e.url))}" target="_blank" rel="noopener noreferrer">公式・出典ページ ↗</a></p>`:""}
-   <div class="actions"><button type="button" data-edit="${esc(e.id)}">編集</button><button class="danger" type="button" data-del="${esc(e.id)}">削除</button></div>
-  </article>`).join(""):'<p class="muted">この日の予定はまだありません。公式データを再読込するか、手動で追加してね。</p>';
-
- // この日が受付期間に含まれるチケットも表示
- const periods=all().filter(e=>isPeriod(e)&&filtered(e)&&periodStart(e)<=selected&&selected<=periodEnd(e));
- if(periods.length){
-  $("dayEvents").insertAdjacentHTML("beforeend",
-   `<div class="period-heading">この日が受付期間のチケット（${periods.length}件）</div>`+
-   periods.map(periodCard).join(""));
- }
-
- bindEditButtons();
+function bindDeleteButtons(){
  document.querySelectorAll("[data-del]").forEach(button=>{
   button.onclick=()=>{
    const e=all().find(x=>x.id===button.dataset.del);
    if(!e)return;
    if(!confirm("「"+e.title+"」を削除する？"))return;
-
    if(e.origin==="official"){
     manual=manual.filter(x=>x.id!==e.id);
     manual.push({...e,hidden:true});
@@ -426,28 +593,47 @@ function renderDay(){
   };
  });
 }
+function renderDetail(){
+ if(detailMode==="period"&&detailPeriod){
+  $("dayTitle").textContent="チケット受付期間";
+  $("dayEvents").innerHTML=periodCard(detailPeriod);
+  bindEditButtons();
+  return;
+ }
+ const d=new Date(selected+"T12:00:00");
+ $("dayTitle").textContent=(d.getMonth()+1)+"月"+d.getDate()+"日の予定";
+ const list=all()
+  .filter(x=>!isPeriod(x)&&x.date===selected&&filtered(x))
+  .sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+ let html=list.length?list.map(e=>eventCard(e,false)).join("")
+  :'<p class="muted">この日の予定はまだありません。</p>';
+ const periods=all().filter(e=>isPeriod(e)&&filtered(e,true)&&periodStart(e)<=selected&&selected<=periodEnd(e));
+ if(periods.length){
+  html+=`<div style="font-size:.85rem;color:#8a5b27;margin:6px 0 2px">この日が受付期間のチケット（${periods.length}件）</div>`
+   +periods.map(periodCard).join("");
+ }
+ $("dayEvents").innerHTML=html;
+ bindEditButtons();
+ bindDeleteButtons();
+}
 
+/* ---------- data ---------- */
 async function refresh(){
  if(busy)return;
  busy=true;
  $("refresh").disabled=true;
  $("status").className="status warn";
  $("status").textContent="最新の公式データを読み込み中…";
-
  try{
   const response=await fetch("./data/events.json?ts="+Date.now(),{cache:"no-store"});
   if(!response.ok)throw Error("HTTP "+response.status);
-
   const data=await response.json();
   official=Array.isArray(data.events)?data.events:[];
-
   const sourceSummary=Object.entries(data.sources||{})
    .map(([name,value])=>`${esc(name)} ${Number(value.count)||0}件`)
    .join(" / ");
-
   const places=official.filter(e=>e.place).length;
   const periods=official.filter(isPeriod).length;
-
   $("status").className="status ok";
   $("status").innerHTML=
    `公式データを読み込みました。<br>`+
@@ -456,7 +642,6 @@ async function refresh(){
    `チケット受付期間：${periods}件<br>`+
    `最終取得：${esc(data.updated_at||"不明")}<br>`+
    `情報源：${sourceSummary||"記録なし"}`;
-
   render();
  }catch(error){
   $("status").className="status warn";
@@ -467,10 +652,10 @@ async function refresh(){
  }
 }
 
+/* ---------- editor ---------- */
 function edit(e){
- $("editor").style.display="block";
+ $("editor").classList.remove("hidden");
  $("editorTitle").textContent=e?"予定を編集":"予定を追加";
-
  $("id").value=e?.id||"";
  $("origin").value=e?.origin||"";
  $("date").value=e?.date||selected;
@@ -482,38 +667,30 @@ function edit(e){
  $("url").value=e?.url||"";
  $("notes").value=e?.notes||"";
  $("unconfirmed").checked=!!e?.unconfirmed;
-
  $("startDate").value=e?.start_date||"";
  $("endDate").value=e?.end_date||"";
  $("periodFields").classList.toggle("hidden",$("type").value!=="チケット受付");
-
  $("editor").scrollIntoView({behavior:"smooth",block:"start"});
 }
-
 function closeEditor(){
- $("editor").style.display="none";
+ $("editor").classList.add("hidden");
  $("form").reset();
  $("periodFields").classList.add("hidden");
 }
-
 $("type").addEventListener("change",()=>{
  $("periodFields").classList.toggle("hidden",$("type").value!=="チケット受付");
 });
-
 $("form").onsubmit=event=>{
  event.preventDefault();
-
  const oldId=$("id").value;
  const old=oldId?all().find(x=>x.id===oldId):null;
  const isTicket=$("type").value==="チケット受付";
  const startDate=isTicket?($("startDate").value||$("date").value):"";
  const endDate=isTicket?($("endDate").value||startDate):"";
-
  if(isTicket&&(!startDate||!endDate||endDate<startDate)){
   alert("受付開始日と終了日を正しく入力してね。");
   return;
  }
-
  const id=oldId||"manual-"+Date.now();
  const item={
   id,
@@ -529,7 +706,6 @@ $("form").onsubmit=event=>{
   source:old?.source||"manual",
   origin:"manual"
  };
-
  if(isTicket){
   item.period_type="ticket";
   item.start_date=startDate;
@@ -539,27 +715,26 @@ $("form").onsubmit=event=>{
   item.start_date=old.start_date;
   item.end_date=old.end_date;
  }
-
  manual=manual.filter(x=>x.id!==id);
  manual.push(item);
  saveManual();
-
  selected=item.date;
+ detailMode="day";
  month=new Date(item.date+"T12:00:00");
  closeEditor();
  render();
 };
 
+/* ---------- controls ---------- */
 $("prev").onclick=()=>{month=new Date(month.getFullYear(),month.getMonth()-1,1);render();};
 $("next").onclick=()=>{month=new Date(month.getFullYear(),month.getMonth()+1,1);render();};
-$("today").onclick=()=>{month=new Date();selected=key(new Date());render();};
+$("todayBtn").onclick=()=>{month=new Date();selected=key(new Date());detailMode="day";render();};
 $("add").onclick=()=>edit(null);
 $("close").onclick=closeEditor;
 $("cancel").onclick=closeEditor;
 $("refresh").onclick=refresh;
-$("memberFilter").onchange=render;
-$("typeFilter").onchange=render;
-
+$("viewMonth").onclick=()=>{view="month";$("viewMonth").classList.add("active");$("viewList").classList.remove("active");render();};
+$("viewList").onclick=()=>{view="list";$("viewList").classList.add("active");$("viewMonth").classList.remove("active");render();};
 $("backup").onclick=()=>{
  const blob=new Blob([JSON.stringify(manual,null,2)],{type:"application/json"});
  const url=URL.createObjectURL(blob);
@@ -569,9 +744,7 @@ $("backup").onclick=()=>{
  a.click();
  setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-
 $("restore").onclick=()=>$("file").click();
-
 $("file").onchange=async event=>{
  try{
   const file=event.target.files[0];
@@ -590,6 +763,13 @@ $("file").onchange=async event=>{
  }
 };
 
+/* ---------- init ---------- */
+if(window.matchMedia("(max-width:900px)").matches){
+ $("filterPanel").classList.add("hidden");
+}else{
+ $("filterPanel").classList.remove("hidden");
+}
+buildMemberChips();
 render();
 refresh();
 setInterval(refresh,30*60*1000);
